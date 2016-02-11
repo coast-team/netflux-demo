@@ -14,7 +14,8 @@
     <div class="all-width">
       <span>I'm: </span><span id="my-id"></span>
     </div>
-    <textarea id="msg" class="all-width" rows="5" onkeypress="send(event)"></textarea>
+    <textarea id="msg" class="all-width" rows="5" onkeypress="sendEnter(event)"></textarea>
+    <button onclick="send()">Send</button>
   </div>
 
   <!-- Control -->
@@ -59,13 +60,17 @@
         })
     }
 
-    function send (event) {
+    function sendEnter (event) {
       if (event.keyCode == 13) {
-        var msg = document.getElementById("msg").value
-        webChannel.send(msg)
-        onMessage(webChannel.myID, msg)
-        document.getElementById("msg").value = ""
+        send()
       }
+    }
+
+    function send () {
+      var msg = document.getElementById("msg").value
+      webChannel.send(msg)
+      onMessage(webChannel.myID, msg)
+      document.getElementById("msg").value = ""
     }
 
     onJoining = function (id) {
