@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <link href="main.css" rel="stylesheet" />
+</head>
+
+<body>
+
+  <!-- Chat -->
+  <div class="chat">
+    <table id="chat" class="all-width">
+    </table>
+    <div class="all-width">
+      <span>I'm: </span><span id="my-id"></span>
+    </div>
+    <textarea id="msg" class="all-width" rows="5" onkeypress="send(event)"></textarea>
+  </div>
+
+  <!-- Control -->
+  <div class="control">
+    <div class="all-width">
+      <input id="key-join" class="keys" type="text" />
+      <button id="join" onclick="join()">Join</button>
+    </div>
+    <div class="all-width">
+      <span id="key-create" class="keys"></span>
+      <button id="create" onclick="create()">Create</button>
+    </div>
+    <ol id="members" class="all-width">
+    </ol>
+  </div>
+
+  <script src="netflux.js"></script>
+  <script>
+    var webChannel, onJoining, onMessage
+    function create () {
+      webChannel = nf.create(onJoining, onMessage)
+      webChannel.openForJoining()
+      .then(function (data) {
+        webChannel.onJoining = onJoining
+        webChannel.onmessage = onMessage
+        document.getElementById("key-create").appendChild(document.createTextNode(data.key))
+        document.getElementById("my-id").innerHTML = webChannel.myID
+      })
+    }
+
+    function join () {
+      var key = document.getElementById("key-join").value
+      nf.join(key)
+        .then(function (wc) {
+          webChannel = wc
+          webChannel.onJoining = onJoining
+          webChannel.onmessage = onMessage
+          webChannel.channels.forEach(function(value) {
+            onJoining(value.peerID)
+          })
+          document.getElementById("my-id").innerHTML = webChannel.myID
+        })
+    }
+
+    function send (event) {
+      if (event.keyCode == 13) {
+        var msg = document.getElementById("msg").value
+        webChannel.send(msg)
+        onMessage(webChannel.myID, msg)
+        document.getElementById("msg").value = ""
+      }
+    }
+
+    onJoining = function (id) {
+      var ol = document.getElementById("members")
+      var li = document.createElement("li")
+      li.appendChild(document.createTextNode(id))
+      ol.appendChild(li)
+    }
+
+    onMessage = function (id, msg) {
+      var chat = document.getElementById("chat")
+      var msgTag = document.createElement("tr")
+      var idTD = document.createElement("td")
+      idTD.appendChild(document.createTextNode(id))
+      var msgTD = document.createElement("td")
+      msgTD.appendChild(document.createTextNode(msg))
+      msgTag.appendChild(idTD)
+      msgTag.appendChild(msgTD)
+      chat.appendChild(msgTag)
+      chat.scrollTop = chat.scrollHeight
+    }
+  </script>
+</body>
+
+</html>

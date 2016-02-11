@@ -1,0 +1,54 @@
+.chat, .control {
+  display: inline-block;
+  float: left;
+  margin-top: 20px;
+}
+
+.chat {
+  min-width: 400px;
+  max-width: 60%;
+}
+
+.chat table {
+  display: inline-block;
+  height: 400px;
+  overflow: auto;
+  border: 2px outfit;
+}
+
+.chat table tr {
+  border-bottom: dotted 1px grey;
+}
+
+.chat table tr td:first-child {
+  text-align: right;
+  color: grey;
+}
+
+.control {
+  margin-left: 30px;
+  min-width: 200px;
+  max-width: 100%;
+}
+
+.control > div, .control ol {
+  margin: 20px;
+}
+
+#key-join, #key-create, button {
+  height: 25px;
+}
+
+button {
+  width: 60px;
+}
+
+#key-join, #key-create {
+  display: inline-block;
+  margin-right: 10px;
+  width: 200px;
+}
+
+.all-width {
+  width: 100%;
+}
