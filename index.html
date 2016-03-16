@@ -2,6 +2,7 @@
 <html>
 
 <head>
+  <meta charset="utf-8">
   <link href="main.css" rel="stylesheet" />
 </head>
 
@@ -36,32 +37,32 @@
   <script>
     var webChannel, onJoining, onMessage
     function create () {
-      webChannel = nf.create(onJoining, onMessage)
-      webChannel.openForJoining()
-      .then(function (data) {
-        webChannel.onJoining = onJoining
-        webChannel.onmessage = onMessage
-        document.getElementById("key-create").appendChild(document.createTextNode(data.key))
-        document.getElementById("my-id").innerHTML = webChannel.myID
-      })
+      webChannel = new nf.WebChannel()
+      webChannel.onJoining = onJoining
+      webChannel.onMessage = onMessage
+      var key = webChannel.openForJoining()
+      document.getElementById("key-create").appendChild(document.createTextNode(key))
+      document.getElementById("my-id").innerHTML = webChannel.myId
     }
 
     function join () {
       var key = document.getElementById("key-join").value
-      nf.join(key)
+
+      webChannel = new nf.WebChannel()
+      webChannel.onJoining = onJoining
+      webChannel.onMessage = onMessage
+      webChannel.join(key)
         .then(function (wc) {
-          webChannel = wc
-          webChannel.onJoining = onJoining
-          webChannel.onmessage = onMessage
           webChannel.channels.forEach(function(value) {
-            onJoining(value.peerID)
+            onJoining(value.peerId)
           })
-          document.getElementById("my-id").innerHTML = webChannel.myID
+          document.getElementById("my-id").innerHTML = webChannel.myId
         })
     }
 
     function sendEnter (event) {
       if (event.keyCode == 13) {
+        event.preventDefault()
         send()
       }
     }
@@ -69,7 +70,7 @@
     function send () {
       var msg = document.getElementById("msg").value
       webChannel.send(msg)
-      onMessage(webChannel.myID, msg)
+      onMessage(webChannel.myId, msg)
       document.getElementById("msg").value = ""
     }
 
