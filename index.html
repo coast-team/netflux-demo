@@ -24,6 +24,7 @@
     <div class="all-width">
       <input id="key-join" class="keys" type="text" />
       <button id="join" onclick="join()">Join</button>
+      <button id="leave" onclick="leave()">Leave</button>
     </div>
     <div class="all-width">
       <span id="key-create" class="keys"></span>
@@ -33,13 +34,14 @@
     </ol>
   </div>
 
-  <script src="netflux.js"></script>
+  <script src="../netflux/dist/netflux.js"></script>
   <script>
     var webChannel, onJoining, onMessage
     function create () {
-      webChannel = new nf.WebChannel()
+      webChannel = new nf.WebChannel({signaling: 'ws://192.168.0.102:8081'})
       webChannel.onJoining = onJoining
       webChannel.onMessage = onMessage
+      webChannel.onLeaving = onLeaving
       var key = webChannel.openForJoining()
       document.getElementById("key-create").appendChild(document.createTextNode(key))
       document.getElementById("my-id").innerHTML = webChannel.myId
@@ -48,9 +50,10 @@
     function join () {
       var key = document.getElementById("key-join").value
 
-      webChannel = new nf.WebChannel()
+      webChannel = new nf.WebChannel({signaling: 'ws://192.168.0.102:8081'})
       webChannel.onJoining = onJoining
       webChannel.onMessage = onMessage
+      webChannel.onLeaving = onLeaving
       webChannel.join(key)
         .then(function (wc) {
           webChannel.channels.forEach(function(value) {
@@ -58,6 +61,12 @@
           })
           document.getElementById("my-id").innerHTML = webChannel.myId
         })
+    }
+
+    function leave () {
+      webChannel.leave()
+      var ol = document.getElementById("members")
+      ol.innerHTML = ''
     }
 
     function sendEnter (event) {
@@ -79,6 +88,15 @@
       var li = document.createElement("li")
       li.appendChild(document.createTextNode(id))
       ol.appendChild(li)
+    }
+
+    onLeaving = function (id) {
+      var ol = document.getElementById("members")
+      for (var i in ol.childNodes) {
+        if (ol.childNodes[i].innerHTML === id) {
+          ol.removeChild(ol.childNodes[i])
+        }
+      }
     }
 
     onMessage = function (id, msg) {
