@@ -1646,8 +1646,7 @@
       this.defaults = {
         signaling: 'ws://sigver-coastteam.rhcloud.com:8000',
         iceServers: [
-          {urls: 'stun:23.21.150.121'},
-          {urls: 'stun:stun.l.google.com:19302'},
+          {urls: 'stun:turn02.uswest.xirsys.com'},
           {urls: 'turn:turn02.uswest.xirsys.com:443?transport=tcp', credential: '0fff12ce-2805-11e6-8e7f-19e7cb122e1a', username: '0fff11c0-2805-11e6-8b10-65660ecb44fe'}
         ]
       }
@@ -1729,6 +1728,7 @@
         socket.onmessage = (evt) => {
           try {
             let msg = JSON.parse(evt.data)
+            console.log('Message from SIGNALING server: ', msg)
             // Check message format
             if (!('data' in msg)) {
               reject(`Unknown message from the signaling server: ${evt.data}`)
