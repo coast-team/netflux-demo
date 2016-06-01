@@ -1646,8 +1646,8 @@
       this.defaults = {
         signaling: 'ws://sigver-coastteam.rhcloud.com:8000',
         iceServers: [
-          {urls: 'stun:turn02.uswest.xirsys.com'},
-          {urls: 'turn:turn02.uswest.xirsys.com:443?transport=tcp', credential: '0fff12ce-2805-11e6-8e7f-19e7cb122e1a', username: '0fff11c0-2805-11e6-8b10-65660ecb44fe'}
+          {urls: 'stun:turn01.uswest.xirsys.com'},
+          {urls: 'turn:turn01.uswest.xirsys.com:443?transport=udp', credential: 'ffd2ac3a-280e-11e6-a490-82fbe4816256', username: 'ffd2abae-280e-11e6-b8e6-4969dd337df0'}
         ]
       }
       this.settings = Object.assign({}, this.defaults, options)
@@ -1736,9 +1736,15 @@
 
             if ('answer' in msg.data) {
               pc.setRemoteDescription(this.createSessionDescription(msg.data.answer))
+                .then(() => {
+                  console.log('Answer has been set: ', msg.data.answer)
+                })
                 .catch(reject)
             } else if ('candidate' in msg.data) {
               pc.addIceCandidate(this.createIceCandidate(msg.data.candidate))
+                .then(() => {
+                  console.log('Candidate has been added: ', msg.data.candidate)
+                })
                 .catch((evt) => {
                   // This exception does not reject the current Promise, because
                   // still the connection may be established even without one or
@@ -1824,7 +1830,10 @@
           dc.onclose()
         }
       }
-      dc.onopen = (evt) => onChannel(dc)
+      dc.onopen = (evt) => {
+        console.log('Data channel has been opened: ', evt)
+        onChannel(dc)
+      }
       return pc.createOffer()
         .then((offer) => pc.setLocalDescription(offer))
         .then(() => {
@@ -1846,16 +1855,23 @@
     createPeerConnectionAndAnswer (onCandidate, sendAnswer, onChannel, offer) {
       let pc = this.createPeerConnection(onCandidate)
       pc.ondatachannel = (dcEvt) => {
+        console.log('ondatachannel: ', dcEvt)
         let dc = dcEvt.channel
         pc.oniceconnectionstatechange = () => {
           if (pc.iceConnectionState === 'disconnected') {
             dc.onclose()
           }
         }
-        dc.onopen = (evt) => onChannel(dc)
+        dc.onopen = (evt) => {
+          console.log('Data channel has been opened: ', evt)
+          onChannel(dc)
+        }
       }
       return pc.setRemoteDescription(this.createSessionDescription(offer))
-        .then(() => pc.createAnswer())
+        .then(() => {
+          console.log('Offer has been set: ', offer)
+          return pc.createAnswer()
+        })
         .then((answer) => pc.setLocalDescription(answer))
         .then(() => {
           sendAnswer(pc.localDescription.toJSON())
