@@ -65,6 +65,9 @@
           })
           document.getElementById("my-id").innerHTML = webChannel.myId
         })
+        .catch((reason) => {
+          console.log('Cannot join: ' + reason)
+        })
     }
 
     function leave () {
