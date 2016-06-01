@@ -1652,22 +1652,6 @@
         ]
       }
       this.settings = Object.assign({}, this.defaults, options)
-      $(document).ready(function() {
-                  $.get("https://service.xirsys.com/ice",
-                      {
-                          ident: "kalitine",
-                          secret: "82b8fc32-2808-11e6-83a5-8195c5890b7d",
-                          domain: "loria.fr",
-                          application: "default",
-                          room: "default",
-                          secure: 1
-                      },
-                      function(data, status) {
-                          alert("Data: " + data + "nnStatus: " + status);
-                          console.log("Data: " + data + "nnStatus: " + status);
-                      }
-                  );
-              });
     }
 
     open (key, onChannel, options = {}) {
