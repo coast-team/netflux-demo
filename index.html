@@ -34,23 +34,27 @@
     </ol>
   </div>
 
-  <script src="../netflux/dist/netflux.js"></script>
+  <script src="netflux.js"></script>
   <script>
-    var webChannel, onJoining, onMessage
+    let webChannel, onJoining, onMessage
+    //let signaling = 'ws://152.81.64.252:8000'
+    let signaling = 'ws://sigver-coastteam.rhcloud.com:8000'
     function create () {
-      webChannel = new nf.WebChannel({signaling: 'ws://192.168.0.102:8081'})
+      webChannel = new netflux.WebChannel({signaling})
       webChannel.onJoining = onJoining
       webChannel.onMessage = onMessage
       webChannel.onLeaving = onLeaving
-      var key = webChannel.openForJoining()
-      document.getElementById("key-create").appendChild(document.createTextNode(key))
-      document.getElementById("my-id").innerHTML = webChannel.myId
+      webChannel.openForJoining()
+        .then((data) => {
+          document.getElementById("key-create").appendChild(document.createTextNode(data.key))
+          document.getElementById("my-id").innerHTML = webChannel.myId
+        })
     }
 
     function join () {
-      var key = document.getElementById("key-join").value
+      let key = document.getElementById("key-join").value
 
-      webChannel = new nf.WebChannel({signaling: 'ws://192.168.0.102:8081'})
+      webChannel = new netflux.WebChannel({signaling})
       webChannel.onJoining = onJoining
       webChannel.onMessage = onMessage
       webChannel.onLeaving = onLeaving
@@ -65,7 +69,7 @@
 
     function leave () {
       webChannel.leave()
-      var ol = document.getElementById("members")
+      let ol = document.getElementById("members")
       ol.innerHTML = ''
     }
 
@@ -77,34 +81,35 @@
     }
 
     function send () {
-      var msg = document.getElementById("msg").value
+      let msg = document.getElementById("msg").value
       webChannel.send(msg)
       onMessage(webChannel.myId, msg)
       document.getElementById("msg").value = ""
     }
 
     onJoining = function (id) {
-      var ol = document.getElementById("members")
-      var li = document.createElement("li")
+      let ol = document.getElementById("members")
+      let li = document.createElement("li")
       li.appendChild(document.createTextNode(id))
       ol.appendChild(li)
     }
 
     onLeaving = function (id) {
-      var ol = document.getElementById("members")
-      for (var i in ol.childNodes) {
-        if (ol.childNodes[i].innerHTML === id) {
+      let ol = document.getElementById("members")
+      for (let i in ol.childNodes) {
+        if (ol.childNodes[i].innerHTML == id) {
           ol.removeChild(ol.childNodes[i])
+          break
         }
       }
     }
 
     onMessage = function (id, msg) {
-      var chat = document.getElementById("chat")
-      var msgTag = document.createElement("tr")
-      var idTD = document.createElement("td")
+      let chat = document.getElementById("chat")
+      let msgTag = document.createElement("tr")
+      let idTD = document.createElement("td")
       idTD.appendChild(document.createTextNode(id))
-      var msgTD = document.createElement("td")
+      let msgTD = document.createElement("td")
       msgTD.appendChild(document.createTextNode(msg))
       msgTag.appendChild(idTD)
       msgTag.appendChild(msgTD)
