@@ -1648,10 +1648,26 @@
         iceServers: [
           {urls: 'stun:23.21.150.121'},
           {urls: 'stun:stun.l.google.com:19302'},
-          {urls: 'turn:192.158.29.39:3478?transport=tcp', credential: 'JZEOEt2V3Qb0y27GRntt2u2PAYA=', username: '28224511:1379330808'}
+          {urls: 'turn:turn02.uswest.xirsys.com:443?transport=tcp', credential: '0fff12ce-2805-11e6-8e7f-19e7cb122e1a', username: '0fff11c0-2805-11e6-8b10-65660ecb44fe'}
         ]
       }
       this.settings = Object.assign({}, this.defaults, options)
+      $(document).ready(function() {
+                  $.get("https://service.xirsys.com/ice",
+                      {
+                          ident: "kalitine",
+                          secret: "82b8fc32-2808-11e6-83a5-8195c5890b7d",
+                          domain: "loria.fr",
+                          application: "default",
+                          room: "default",
+                          secure: 1
+                      },
+                      function(data, status) {
+                          alert("Data: " + data + "nnStatus: " + status);
+                          console.log("Data: " + data + "nnStatus: " + status);
+                      }
+                  );
+              });
     }
 
     open (key, onChannel, options = {}) {
