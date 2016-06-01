@@ -1872,10 +1872,17 @@
           console.log('Offer has been set: ', offer)
           return pc.createAnswer()
         })
-        .then((answer) => pc.setLocalDescription(answer))
+        .then((answer) => {
+          console.log('Local description has been set: ', answer)
+          pc.setLocalDescription(answer)
+        })
         .then(() => {
+          console.log('answer has been sent: ', pc.localDescription.toJSON())
           sendAnswer(pc.localDescription.toJSON())
           return pc
+        })
+        .catch((reason) => {
+          console.error('Set offer, generate answer error: ', reason)
         })
     }
 
