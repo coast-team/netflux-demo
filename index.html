@@ -26,6 +26,10 @@
       <button id="join" onclick="join()">Join</button>
       <button id="leave" onclick="leave()">Leave</button>
     </div>
+    <div>
+      <span>I want to use the SigVer at (empty for default) : </span>
+      <input id="input-sigver"></input>
+    </div>
     <div class="all-width">
       <span id="key-create" class="keys"></span>
       <button id="create" onclick="create()">Create</button>
@@ -36,10 +40,25 @@
 
   <script src="netflux.js"></script>
   <script>
+    let inputSigVer = document.getElementById('input-sigver')
+    let inputSigVerValue
+
     let webChannel, onJoining, onMessage
     //let signaling = 'ws://152.81.64.252:8000'
-    let signaling = 'wss://sigver-coastteam.rhcloud.com:8443'
+    let signaling //= 'wss://sigver-coastteam.rhcloud.com:8443'
+
+    function updateInputSigVerValue() {
+      inputSigVerValue = inputSigVer.value
+    }
+
     function create () {
+      updateInputSigVerValue()
+      if (inputSigVerValue) {
+        signaling = inputSigVerValue
+      } else {
+        signaling = 'ws://localhost:8000'
+      }
+
       webChannel = new netflux.WebChannel({signaling})
       webChannel.onJoining = onJoining
       webChannel.onMessage = onMessage
@@ -53,6 +72,13 @@
 
     function join () {
       let key = document.getElementById("key-join").value
+
+      updateInputSigVerValue()
+      if (inputSigVerValue) {
+        signaling = inputSigVerValue
+      } else {
+        signaling = 'ws://localhost:8000'
+      }
 
       webChannel = new netflux.WebChannel({signaling})
       webChannel.onJoining = onJoining
