@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <link href="main.css" rel="stylesheet" />
-  <link rel="icon" type="image/png" sizes="16x16" href="favicon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="icon.png">
 </head>
 
 <body>
@@ -35,7 +35,7 @@
     </ol>
   </div>
 
-  <script src="netflux.js"></script>
+  <script src="https://rawgit.com/coast-team/netflux/master/dist/netflux.es2015.umd.js"></script>
   <script>
     let webChannel, onJoining, onMessage
     //let signaling = 'ws://152.81.64.252:8000'
@@ -45,7 +45,7 @@
       webChannel.onJoining = onJoining
       webChannel.onMessage = onMessage
       webChannel.onLeaving = onLeaving
-      webChannel.openForJoining()
+      webChannel.open()
         .then((data) => {
           document.getElementById("key-create").appendChild(document.createTextNode(data.key))
           document.getElementById("my-id").innerHTML = webChannel.myId

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" type="image/png" sizes="16x16" href="icon.png">
+</head>
+
+<body>
+
+  <textarea id="textarea"></textarea>
+  <button id="button"></button>
+
+  <script src="https://rawgit.com/coast-team/netflux/master/dist/netflux.es2015.umd.js"></script>
+  <script>
+    const key = 'grid5000'
+    const signaling = 'wss://sigver-coastteam.rhcloud.com:8443'
+    const textarea = document.getElementById('textarea')
+    const button = document.getElementById('button')
+    const webChannel = new netflux.WebChannel()
+    let peerNb = 0
+    webChannel.onMessage = (id, msg) => {
+      console.log(`[Tracker] [${Date.now()}] Message Received : ${msg}`)
+    }
+    webChannel.onJoining = (id) => {
+      console.log(`[Tracker] [${Date.now()}] New Peer Joined, Total Is: ${++peerNb}`)
+    }
+    webChannel.open({key, signaling})
+      .catch(() => {
+        webChannel.join(key, {signaling})
+      })
+    button.addEventListener('click', () => {
+      console.log(`[Tracker] [${Date.now()}] Message Sent : ${textarea.value}`)
+      webChannel.send(textarea.value)
+      textarea.value = ''
+    })
+  </script>
+</body>
+
+</html>
