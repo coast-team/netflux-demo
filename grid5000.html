@@ -24,10 +24,10 @@
       console.log(`[Tracker] [${Date.now()}] Message Received : ${msg}`)
     }
     webChannel.onJoining = id => {
-      console.log(`[Tracker] [${Date.now()}] Peer joined : ${id}`)
+      console.log(`[TrackerJoin] [${Date.now()}] Peer joined : ${id}`)
     }
     webChannel.onLeaving = id => {
-      console.log(`[Tracker] [${Date.now()}] Peer left : ${id}`)
+      console.log(`[TrackerLeave] [${Date.now()}] Peer left : ${id}`)
     }
     webChannel.open({key, signaling})
       .then(() => {
