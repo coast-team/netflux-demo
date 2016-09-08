@@ -11,7 +11,8 @@
   <textarea id="textarea"></textarea>
   <button id="button"></button>
 
-  <script src="https://rawgit.com/coast-team/netflux/master/dist/netflux.es2015.umd.js"></script>
+  <!-- <script src="https://rawgit.com/coast-team/netflux/master/dist/netflux.es2015.umd.js"></script> -->
+  <script src="netflux.es2015.umd.js"></script>
   <script>
     const key = 'grid5000'
     const signaling = 'wss://sigver-coastteam.rhcloud.com:8443'
@@ -22,8 +23,11 @@
     webChannel.onMessage = (id, msg) => {
       console.log(`[Tracker] [${Date.now()}] Message Received : ${msg}`)
     }
-    webChannel.onJoining = (id) => {
-      console.log(`New Peer Joined, Total Is: ${++peerNb}`)
+    webChannel.onJoining = id => {
+      console.log(`[Tracker] [${Date.now()}] Peer joined : ${id}`)
+    }
+    webChannel.onLeaving = id => {
+      console.log(`[Tracker] [${Date.now()}] Peer left : ${id}`)
     }
     webChannel.open({key, signaling})
       .then(() => {
