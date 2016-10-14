@@ -4,1042 +4,6 @@
   (factory((global.netflux = global.netflux || {})));
 }(this, (function (exports) { 'use strict';
 
-(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-
-},{}],2:[function(require,module,exports){
-/*
- *  Copyright (c) 2016 The WebRTC project authors. All Rights Reserved.
- *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree.
- */
- /* eslint-env node */
-
-'use strict';
-
-// Shimming starts here.
-(function() {
-  // Utils.
-  var logging = require('./utils').log;
-  var browserDetails = require('./utils').browserDetails;
-  // Export to the adapter global object visible in the browser.
-  module.exports.browserDetails = browserDetails;
-  module.exports.extractVersion = require('./utils').extractVersion;
-  module.exports.disableLog = require('./utils').disableLog;
-
-  // Uncomment the line below if you want logging to occur, including logging
-  // for the switch statement below. Can also be turned on in the browser via
-  // adapter.disableLog(false), but then logging from the switch statement below
-  // will not appear.
-  // require('./utils').disableLog(false);
-
-  // Browser shims.
-  var chromeShim = require('./chrome/chrome_shim') || null;
-  var edgeShim = require('./edge/edge_shim') || null;
-  var firefoxShim = require('./firefox/firefox_shim') || null;
-  var safariShim = require('./safari/safari_shim') || null;
-
-  // Shim browser if found.
-  switch (browserDetails.browser) {
-    case 'opera': // fallthrough as it uses chrome shims
-    case 'chrome':
-      if (!chromeShim || !chromeShim.shimPeerConnection) {
-        logging('Chrome shim is not included in this adapter release.');
-        return;
-      }
-      logging('adapter.js shimming chrome.');
-      // Export to the adapter global object visible in the browser.
-      module.exports.browserShim = chromeShim;
-
-      chromeShim.shimGetUserMedia();
-      chromeShim.shimMediaStream();
-      chromeShim.shimSourceObject();
-      chromeShim.shimPeerConnection();
-      chromeShim.shimOnTrack();
-      break;
-    case 'firefox':
-      if (!firefoxShim || !firefoxShim.shimPeerConnection) {
-        logging('Firefox shim is not included in this adapter release.');
-        return;
-      }
-      logging('adapter.js shimming firefox.');
-      // Export to the adapter global object visible in the browser.
-      module.exports.browserShim = firefoxShim;
-
-      firefoxShim.shimGetUserMedia();
-      firefoxShim.shimSourceObject();
-      firefoxShim.shimPeerConnection();
-      firefoxShim.shimOnTrack();
-      break;
-    case 'edge':
-      if (!edgeShim || !edgeShim.shimPeerConnection) {
-        logging('MS edge shim is not included in this adapter release.');
-        return;
-      }
-      logging('adapter.js shimming edge.');
-      // Export to the adapter global object visible in the browser.
-      module.exports.browserShim = edgeShim;
-
-      edgeShim.shimGetUserMedia();
-      edgeShim.shimPeerConnection();
-      break;
-    case 'safari':
-      if (!safariShim) {
-        logging('Safari shim is not included in this adapter release.');
-        return;
-      }
-      logging('adapter.js shimming safari.');
-      // Export to the adapter global object visible in the browser.
-      module.exports.browserShim = safariShim;
-
-      safariShim.shimGetUserMedia();
-      break;
-    default:
-      logging('Unsupported browser!');
-  }
-})();
-
-},{"./chrome/chrome_shim":3,"./edge/edge_shim":1,"./firefox/firefox_shim":5,"./safari/safari_shim":7,"./utils":8}],3:[function(require,module,exports){
-
-/*
- *  Copyright (c) 2016 The WebRTC project authors. All Rights Reserved.
- *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree.
- */
- /* eslint-env node */
-'use strict';
-var logging = require('../utils.js').log;
-var browserDetails = require('../utils.js').browserDetails;
-
-var chromeShim = {
-  shimMediaStream: function() {
-    window.MediaStream = window.MediaStream || window.webkitMediaStream;
-  },
-
-  shimOnTrack: function() {
-    if (typeof window === 'object' && window.RTCPeerConnection && !('ontrack' in
-        window.RTCPeerConnection.prototype)) {
-      Object.defineProperty(window.RTCPeerConnection.prototype, 'ontrack', {
-        get: function() {
-          return this._ontrack;
-        },
-        set: function(f) {
-          var self = this;
-          if (this._ontrack) {
-            this.removeEventListener('track', this._ontrack);
-            this.removeEventListener('addstream', this._ontrackpoly);
-          }
-          this.addEventListener('track', this._ontrack = f);
-          this.addEventListener('addstream', this._ontrackpoly = function(e) {
-            // onaddstream does not fire when a track is added to an existing
-            // stream. But stream.onaddtrack is implemented so we use that.
-            e.stream.addEventListener('addtrack', function(te) {
-              var event = new Event('track');
-              event.track = te.track;
-              event.receiver = {track: te.track};
-              event.streams = [e.stream];
-              self.dispatchEvent(event);
-            });
-            e.stream.getTracks().forEach(function(track) {
-              var event = new Event('track');
-              event.track = track;
-              event.receiver = {track: track};
-              event.streams = [e.stream];
-              this.dispatchEvent(event);
-            }.bind(this));
-          }.bind(this));
-        }
-      });
-    }
-  },
-
-  shimSourceObject: function() {
-    if (typeof window === 'object') {
-      if (window.HTMLMediaElement &&
-        !('srcObject' in window.HTMLMediaElement.prototype)) {
-        // Shim the srcObject property, once, when HTMLMediaElement is found.
-        Object.defineProperty(window.HTMLMediaElement.prototype, 'srcObject', {
-          get: function() {
-            return this._srcObject;
-          },
-          set: function(stream) {
-            var self = this;
-            // Use _srcObject as a private property for this shim
-            this._srcObject = stream;
-            if (this.src) {
-              URL.revokeObjectURL(this.src);
-            }
-
-            if (!stream) {
-              this.src = '';
-              return;
-            }
-            this.src = URL.createObjectURL(stream);
-            // We need to recreate the blob url when a track is added or
-            // removed. Doing it manually since we want to avoid a recursion.
-            stream.addEventListener('addtrack', function() {
-              if (self.src) {
-                URL.revokeObjectURL(self.src);
-              }
-              self.src = URL.createObjectURL(stream);
-            });
-            stream.addEventListener('removetrack', function() {
-              if (self.src) {
-                URL.revokeObjectURL(self.src);
-              }
-              self.src = URL.createObjectURL(stream);
-            });
-          }
-        });
-      }
-    }
-  },
-
-  shimPeerConnection: function() {
-    // The RTCPeerConnection object.
-    window.RTCPeerConnection = function(pcConfig, pcConstraints) {
-      // Translate iceTransportPolicy to iceTransports,
-      // see https://code.google.com/p/webrtc/issues/detail?id=4869
-      logging('PeerConnection');
-      if (pcConfig && pcConfig.iceTransportPolicy) {
-        pcConfig.iceTransports = pcConfig.iceTransportPolicy;
-      }
-
-      var pc = new webkitRTCPeerConnection(pcConfig, pcConstraints);
-      var origGetStats = pc.getStats.bind(pc);
-      pc.getStats = function(selector, successCallback, errorCallback) {
-        var self = this;
-        var args = arguments;
-
-        // If selector is a function then we are in the old style stats so just
-        // pass back the original getStats format to avoid breaking old users.
-        if (arguments.length > 0 && typeof selector === 'function') {
-          return origGetStats(selector, successCallback);
-        }
-
-        var fixChromeStats_ = function(response) {
-          var standardReport = {};
-          var reports = response.result();
-          reports.forEach(function(report) {
-            var standardStats = {
-              id: report.id,
-              timestamp: report.timestamp,
-              type: report.type
-            };
-            report.names().forEach(function(name) {
-              standardStats[name] = report.stat(name);
-            });
-            standardReport[standardStats.id] = standardStats;
-          });
-
-          return standardReport;
-        };
-
-        // shim getStats with maplike support
-        var makeMapStats = function(stats, legacyStats) {
-          var map = new Map(Object.keys(stats).map(function(key) {
-            return[key, stats[key]];
-          }));
-          legacyStats = legacyStats || stats;
-          Object.keys(legacyStats).forEach(function(key) {
-            map[key] = legacyStats[key];
-          });
-          return map;
-        };
-
-        if (arguments.length >= 2) {
-          var successCallbackWrapper_ = function(response) {
-            args[1](makeMapStats(fixChromeStats_(response)));
-          };
-
-          return origGetStats.apply(this, [successCallbackWrapper_,
-              arguments[0]]);
-        }
-
-        // promise-support
-        return new Promise(function(resolve, reject) {
-          if (args.length === 1 && typeof selector === 'object') {
-            origGetStats.apply(self, [
-              function(response) {
-                resolve(makeMapStats(fixChromeStats_(response)));
-              }, reject]);
-          } else {
-            // Preserve legacy chrome stats only on legacy access of stats obj
-            origGetStats.apply(self, [
-              function(response) {
-                resolve(makeMapStats(fixChromeStats_(response),
-                    response.result()));
-              }, reject]);
-          }
-        }).then(successCallback, errorCallback);
-      };
-
-      return pc;
-    };
-    window.RTCPeerConnection.prototype = webkitRTCPeerConnection.prototype;
-
-    // wrap static methods. Currently just generateCertificate.
-    if (webkitRTCPeerConnection.generateCertificate) {
-      Object.defineProperty(window.RTCPeerConnection, 'generateCertificate', {
-        get: function() {
-          return webkitRTCPeerConnection.generateCertificate;
-        }
-      });
-    }
-
-    ['createOffer', 'createAnswer'].forEach(function(method) {
-      var nativeMethod = webkitRTCPeerConnection.prototype[method];
-      webkitRTCPeerConnection.prototype[method] = function() {
-        var self = this;
-        if (arguments.length < 1 || (arguments.length === 1 &&
-            typeof arguments[0] === 'object')) {
-          var opts = arguments.length === 1 ? arguments[0] : undefined;
-          return new Promise(function(resolve, reject) {
-            nativeMethod.apply(self, [resolve, reject, opts]);
-          });
-        }
-        return nativeMethod.apply(this, arguments);
-      };
-    });
-
-    // add promise support -- natively available in Chrome 51
-    if (browserDetails.version < 51) {
-      ['setLocalDescription', 'setRemoteDescription', 'addIceCandidate']
-          .forEach(function(method) {
-            var nativeMethod = webkitRTCPeerConnection.prototype[method];
-            webkitRTCPeerConnection.prototype[method] = function() {
-              var args = arguments;
-              var self = this;
-              var promise = new Promise(function(resolve, reject) {
-                nativeMethod.apply(self, [args[0], resolve, reject]);
-              });
-              if (args.length < 2) {
-                return promise;
-              }
-              return promise.then(function() {
-                args[1].apply(null, []);
-              },
-              function(err) {
-                if (args.length >= 3) {
-                  args[2].apply(null, [err]);
-                }
-              });
-            };
-          });
-    }
-
-    // shim implicit creation of RTCSessionDescription/RTCIceCandidate
-    ['setLocalDescription', 'setRemoteDescription', 'addIceCandidate']
-        .forEach(function(method) {
-          var nativeMethod = webkitRTCPeerConnection.prototype[method];
-          webkitRTCPeerConnection.prototype[method] = function() {
-            arguments[0] = new ((method === 'addIceCandidate') ?
-                RTCIceCandidate : RTCSessionDescription)(arguments[0]);
-            return nativeMethod.apply(this, arguments);
-          };
-        });
-
-    // support for addIceCandidate(null)
-    var nativeAddIceCandidate =
-        RTCPeerConnection.prototype.addIceCandidate;
-    RTCPeerConnection.prototype.addIceCandidate = function() {
-      return arguments[0] === null ? Promise.resolve()
-          : nativeAddIceCandidate.apply(this, arguments);
-    };
-  }
-};
-
-
-// Expose public methods.
-module.exports = {
-  shimMediaStream: chromeShim.shimMediaStream,
-  shimOnTrack: chromeShim.shimOnTrack,
-  shimSourceObject: chromeShim.shimSourceObject,
-  shimPeerConnection: chromeShim.shimPeerConnection,
-  shimGetUserMedia: require('./getusermedia')
-};
-
-},{"../utils.js":8,"./getusermedia":4}],4:[function(require,module,exports){
-/*
- *  Copyright (c) 2016 The WebRTC project authors. All Rights Reserved.
- *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree.
- */
- /* eslint-env node */
-'use strict';
-var logging = require('../utils.js').log;
-
-// Expose public methods.
-module.exports = function() {
-  var constraintsToChrome_ = function(c) {
-    if (typeof c !== 'object' || c.mandatory || c.optional) {
-      return c;
-    }
-    var cc = {};
-    Object.keys(c).forEach(function(key) {
-      if (key === 'require' || key === 'advanced' || key === 'mediaSource') {
-        return;
-      }
-      var r = (typeof c[key] === 'object') ? c[key] : {ideal: c[key]};
-      if (r.exact !== undefined && typeof r.exact === 'number') {
-        r.min = r.max = r.exact;
-      }
-      var oldname_ = function(prefix, name) {
-        if (prefix) {
-          return prefix + name.charAt(0).toUpperCase() + name.slice(1);
-        }
-        return (name === 'deviceId') ? 'sourceId' : name;
-      };
-      if (r.ideal !== undefined) {
-        cc.optional = cc.optional || [];
-        var oc = {};
-        if (typeof r.ideal === 'number') {
-          oc[oldname_('min', key)] = r.ideal;
-          cc.optional.push(oc);
-          oc = {};
-          oc[oldname_('max', key)] = r.ideal;
-          cc.optional.push(oc);
-        } else {
-          oc[oldname_('', key)] = r.ideal;
-          cc.optional.push(oc);
-        }
-      }
-      if (r.exact !== undefined && typeof r.exact !== 'number') {
-        cc.mandatory = cc.mandatory || {};
-        cc.mandatory[oldname_('', key)] = r.exact;
-      } else {
-        ['min', 'max'].forEach(function(mix) {
-          if (r[mix] !== undefined) {
-            cc.mandatory = cc.mandatory || {};
-            cc.mandatory[oldname_(mix, key)] = r[mix];
-          }
-        });
-      }
-    });
-    if (c.advanced) {
-      cc.optional = (cc.optional || []).concat(c.advanced);
-    }
-    return cc;
-  };
-
-  var shimConstraints_ = function(constraints, func) {
-    constraints = JSON.parse(JSON.stringify(constraints));
-    if (constraints && constraints.audio) {
-      constraints.audio = constraintsToChrome_(constraints.audio);
-    }
-    if (constraints && typeof constraints.video === 'object') {
-      // Shim facingMode for mobile, where it defaults to "user".
-      var face = constraints.video.facingMode;
-      face = face && ((typeof face === 'object') ? face : {ideal: face});
-
-      if ((face && (face.exact === 'user' || face.exact === 'environment' ||
-                    face.ideal === 'user' || face.ideal === 'environment')) &&
-          !(navigator.mediaDevices.getSupportedConstraints &&
-            navigator.mediaDevices.getSupportedConstraints().facingMode)) {
-        delete constraints.video.facingMode;
-        if (face.exact === 'environment' || face.ideal === 'environment') {
-          // Look for "back" in label, or use last cam (typically back cam).
-          return navigator.mediaDevices.enumerateDevices()
-          .then(function(devices) {
-            devices = devices.filter(function(d) {
-              return d.kind === 'videoinput';
-            });
-            var back = devices.find(function(d) {
-              return d.label.toLowerCase().indexOf('back') !== -1;
-            }) || (devices.length && devices[devices.length - 1]);
-            if (back) {
-              constraints.video.deviceId = face.exact ? {exact: back.deviceId} :
-                                                        {ideal: back.deviceId};
-            }
-            constraints.video = constraintsToChrome_(constraints.video);
-            logging('chrome: ' + JSON.stringify(constraints));
-            return func(constraints);
-          });
-        }
-      }
-      constraints.video = constraintsToChrome_(constraints.video);
-    }
-    logging('chrome: ' + JSON.stringify(constraints));
-    return func(constraints);
-  };
-
-  var shimError_ = function(e) {
-    return {
-      name: {
-        PermissionDeniedError: 'NotAllowedError',
-        ConstraintNotSatisfiedError: 'OverconstrainedError'
-      }[e.name] || e.name,
-      message: e.message,
-      constraint: e.constraintName,
-      toString: function() {
-        return this.name + (this.message && ': ') + this.message;
-      }
-    };
-  };
-
-  var getUserMedia_ = function(constraints, onSuccess, onError) {
-    shimConstraints_(constraints, function(c) {
-      navigator.webkitGetUserMedia(c, onSuccess, function(e) {
-        onError(shimError_(e));
-      });
-    });
-  };
-
-  navigator.getUserMedia = getUserMedia_;
-
-  // Returns the result of getUserMedia as a Promise.
-  var getUserMediaPromise_ = function(constraints) {
-    return new Promise(function(resolve, reject) {
-      navigator.getUserMedia(constraints, resolve, reject);
-    });
-  };
-
-  if (!navigator.mediaDevices) {
-    navigator.mediaDevices = {
-      getUserMedia: getUserMediaPromise_,
-      enumerateDevices: function() {
-        return new Promise(function(resolve) {
-          var kinds = {audio: 'audioinput', video: 'videoinput'};
-          return MediaStreamTrack.getSources(function(devices) {
-            resolve(devices.map(function(device) {
-              return {label: device.label,
-                      kind: kinds[device.kind],
-                      deviceId: device.id,
-                      groupId: ''};
-            }));
-          });
-        });
-      }
-    };
-  }
-
-  // A shim for getUserMedia method on the mediaDevices object.
-  // TODO(KaptenJansson) remove once implemented in Chrome stable.
-  if (!navigator.mediaDevices.getUserMedia) {
-    navigator.mediaDevices.getUserMedia = function(constraints) {
-      return getUserMediaPromise_(constraints);
-    };
-  } else {
-    // Even though Chrome 45 has navigator.mediaDevices and a getUserMedia
-    // function which returns a Promise, it does not accept spec-style
-    // constraints.
-    var origGetUserMedia = navigator.mediaDevices.getUserMedia.
-        bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia = function(cs) {
-      return shimConstraints_(cs, function(c) {
-        return origGetUserMedia(c).catch(function(e) {
-          return Promise.reject(shimError_(e));
-        });
-      });
-    };
-  }
-
-  // Dummy devicechange event methods.
-  // TODO(KaptenJansson) remove once implemented in Chrome stable.
-  if (typeof navigator.mediaDevices.addEventListener === 'undefined') {
-    navigator.mediaDevices.addEventListener = function() {
-      logging('Dummy mediaDevices.addEventListener called.');
-    };
-  }
-  if (typeof navigator.mediaDevices.removeEventListener === 'undefined') {
-    navigator.mediaDevices.removeEventListener = function() {
-      logging('Dummy mediaDevices.removeEventListener called.');
-    };
-  }
-};
-
-},{"../utils.js":8}],5:[function(require,module,exports){
-/*
- *  Copyright (c) 2016 The WebRTC project authors. All Rights Reserved.
- *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree.
- */
- /* eslint-env node */
-'use strict';
-
-var browserDetails = require('../utils').browserDetails;
-
-var firefoxShim = {
-  shimOnTrack: function() {
-    if (typeof window === 'object' && window.RTCPeerConnection && !('ontrack' in
-        window.RTCPeerConnection.prototype)) {
-      Object.defineProperty(window.RTCPeerConnection.prototype, 'ontrack', {
-        get: function() {
-          return this._ontrack;
-        },
-        set: function(f) {
-          if (this._ontrack) {
-            this.removeEventListener('track', this._ontrack);
-            this.removeEventListener('addstream', this._ontrackpoly);
-          }
-          this.addEventListener('track', this._ontrack = f);
-          this.addEventListener('addstream', this._ontrackpoly = function(e) {
-            e.stream.getTracks().forEach(function(track) {
-              var event = new Event('track');
-              event.track = track;
-              event.receiver = {track: track};
-              event.streams = [e.stream];
-              this.dispatchEvent(event);
-            }.bind(this));
-          }.bind(this));
-        }
-      });
-    }
-  },
-
-  shimSourceObject: function() {
-    // Firefox has supported mozSrcObject since FF22, unprefixed in 42.
-    if (typeof window === 'object') {
-      if (window.HTMLMediaElement &&
-        !('srcObject' in window.HTMLMediaElement.prototype)) {
-        // Shim the srcObject property, once, when HTMLMediaElement is found.
-        Object.defineProperty(window.HTMLMediaElement.prototype, 'srcObject', {
-          get: function() {
-            return this.mozSrcObject;
-          },
-          set: function(stream) {
-            this.mozSrcObject = stream;
-          }
-        });
-      }
-    }
-  },
-
-  shimPeerConnection: function() {
-    if (typeof window !== 'object' || !(window.RTCPeerConnection ||
-        window.mozRTCPeerConnection)) {
-      return; // probably media.peerconnection.enabled=false in about:config
-    }
-    // The RTCPeerConnection object.
-    if (!window.RTCPeerConnection) {
-      window.RTCPeerConnection = function(pcConfig, pcConstraints) {
-        if (browserDetails.version < 38) {
-          // .urls is not supported in FF < 38.
-          // create RTCIceServers with a single url.
-          if (pcConfig && pcConfig.iceServers) {
-            var newIceServers = [];
-            for (var i = 0; i < pcConfig.iceServers.length; i++) {
-              var server = pcConfig.iceServers[i];
-              if (server.hasOwnProperty('urls')) {
-                for (var j = 0; j < server.urls.length; j++) {
-                  var newServer = {
-                    url: server.urls[j]
-                  };
-                  if (server.urls[j].indexOf('turn') === 0) {
-                    newServer.username = server.username;
-                    newServer.credential = server.credential;
-                  }
-                  newIceServers.push(newServer);
-                }
-              } else {
-                newIceServers.push(pcConfig.iceServers[i]);
-              }
-            }
-            pcConfig.iceServers = newIceServers;
-          }
-        }
-        return new mozRTCPeerConnection(pcConfig, pcConstraints);
-      };
-      window.RTCPeerConnection.prototype = mozRTCPeerConnection.prototype;
-
-      // wrap static methods. Currently just generateCertificate.
-      if (mozRTCPeerConnection.generateCertificate) {
-        Object.defineProperty(window.RTCPeerConnection, 'generateCertificate', {
-          get: function() {
-            return mozRTCPeerConnection.generateCertificate;
-          }
-        });
-      }
-
-      window.RTCSessionDescription = mozRTCSessionDescription;
-      window.RTCIceCandidate = mozRTCIceCandidate;
-    }
-
-    // shim away need for obsolete RTCIceCandidate/RTCSessionDescription.
-    ['setLocalDescription', 'setRemoteDescription', 'addIceCandidate']
-        .forEach(function(method) {
-          var nativeMethod = RTCPeerConnection.prototype[method];
-          RTCPeerConnection.prototype[method] = function() {
-            arguments[0] = new ((method === 'addIceCandidate') ?
-                RTCIceCandidate : RTCSessionDescription)(arguments[0]);
-            return nativeMethod.apply(this, arguments);
-          };
-        });
-
-    // support for addIceCandidate(null)
-    var nativeAddIceCandidate =
-        RTCPeerConnection.prototype.addIceCandidate;
-    RTCPeerConnection.prototype.addIceCandidate = function() {
-      return arguments[0] === null ? Promise.resolve()
-          : nativeAddIceCandidate.apply(this, arguments);
-    };
-
-    // shim getStats with maplike support
-    var makeMapStats = function(stats) {
-      var map = new Map();
-      Object.keys(stats).forEach(function(key) {
-        map.set(key, stats[key]);
-        map[key] = stats[key];
-      });
-      return map;
-    };
-
-    var nativeGetStats = RTCPeerConnection.prototype.getStats;
-    RTCPeerConnection.prototype.getStats = function(selector, onSucc, onErr) {
-      return nativeGetStats.apply(this, [selector || null])
-        .then(function(stats) {
-          return makeMapStats(stats);
-        })
-        .then(onSucc, onErr);
-    };
-  }
-};
-
-// Expose public methods.
-module.exports = {
-  shimOnTrack: firefoxShim.shimOnTrack,
-  shimSourceObject: firefoxShim.shimSourceObject,
-  shimPeerConnection: firefoxShim.shimPeerConnection,
-  shimGetUserMedia: require('./getusermedia')
-};
-
-},{"../utils":8,"./getusermedia":6}],6:[function(require,module,exports){
-/*
- *  Copyright (c) 2016 The WebRTC project authors. All Rights Reserved.
- *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree.
- */
- /* eslint-env node */
-'use strict';
-
-var logging = require('../utils').log;
-var browserDetails = require('../utils').browserDetails;
-
-// Expose public methods.
-module.exports = function() {
-  var shimError_ = function(e) {
-    return {
-      name: {
-        SecurityError: 'NotAllowedError',
-        PermissionDeniedError: 'NotAllowedError'
-      }[e.name] || e.name,
-      message: {
-        'The operation is insecure.': 'The request is not allowed by the ' +
-        'user agent or the platform in the current context.'
-      }[e.message] || e.message,
-      constraint: e.constraint,
-      toString: function() {
-        return this.name + (this.message && ': ') + this.message;
-      }
-    };
-  };
-
-  // getUserMedia constraints shim.
-  var getUserMedia_ = function(constraints, onSuccess, onError) {
-    var constraintsToFF37_ = function(c) {
-      if (typeof c !== 'object' || c.require) {
-        return c;
-      }
-      var require = [];
-      Object.keys(c).forEach(function(key) {
-        if (key === 'require' || key === 'advanced' || key === 'mediaSource') {
-          return;
-        }
-        var r = c[key] = (typeof c[key] === 'object') ?
-            c[key] : {ideal: c[key]};
-        if (r.min !== undefined ||
-            r.max !== undefined || r.exact !== undefined) {
-          require.push(key);
-        }
-        if (r.exact !== undefined) {
-          if (typeof r.exact === 'number') {
-            r. min = r.max = r.exact;
-          } else {
-            c[key] = r.exact;
-          }
-          delete r.exact;
-        }
-        if (r.ideal !== undefined) {
-          c.advanced = c.advanced || [];
-          var oc = {};
-          if (typeof r.ideal === 'number') {
-            oc[key] = {min: r.ideal, max: r.ideal};
-          } else {
-            oc[key] = r.ideal;
-          }
-          c.advanced.push(oc);
-          delete r.ideal;
-          if (!Object.keys(r).length) {
-            delete c[key];
-          }
-        }
-      });
-      if (require.length) {
-        c.require = require;
-      }
-      return c;
-    };
-    constraints = JSON.parse(JSON.stringify(constraints));
-    if (browserDetails.version < 38) {
-      logging('spec: ' + JSON.stringify(constraints));
-      if (constraints.audio) {
-        constraints.audio = constraintsToFF37_(constraints.audio);
-      }
-      if (constraints.video) {
-        constraints.video = constraintsToFF37_(constraints.video);
-      }
-      logging('ff37: ' + JSON.stringify(constraints));
-    }
-    return navigator.mozGetUserMedia(constraints, onSuccess, function(e) {
-      onError(shimError_(e));
-    });
-  };
-
-  // Returns the result of getUserMedia as a Promise.
-  var getUserMediaPromise_ = function(constraints) {
-    return new Promise(function(resolve, reject) {
-      getUserMedia_(constraints, resolve, reject);
-    });
-  };
-
-  // Shim for mediaDevices on older versions.
-  if (!navigator.mediaDevices) {
-    navigator.mediaDevices = {getUserMedia: getUserMediaPromise_,
-      addEventListener: function() { },
-      removeEventListener: function() { }
-    };
-  }
-  navigator.mediaDevices.enumerateDevices =
-      navigator.mediaDevices.enumerateDevices || function() {
-        return new Promise(function(resolve) {
-          var infos = [
-            {kind: 'audioinput', deviceId: 'default', label: '', groupId: ''},
-            {kind: 'videoinput', deviceId: 'default', label: '', groupId: ''}
-          ];
-          resolve(infos);
-        });
-      };
-
-  if (browserDetails.version < 41) {
-    // Work around http://bugzil.la/1169665
-    var orgEnumerateDevices =
-        navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
-    navigator.mediaDevices.enumerateDevices = function() {
-      return orgEnumerateDevices().then(undefined, function(e) {
-        if (e.name === 'NotFoundError') {
-          return [];
-        }
-        throw e;
-      });
-    };
-  }
-  if (browserDetails.version < 49) {
-    var origGetUserMedia = navigator.mediaDevices.getUserMedia.
-        bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia = function(c) {
-      return origGetUserMedia(c).catch(function(e) {
-        return Promise.reject(shimError_(e));
-      });
-    };
-  }
-  navigator.getUserMedia = function(constraints, onSuccess, onError) {
-    if (browserDetails.version < 44) {
-      return getUserMedia_(constraints, onSuccess, onError);
-    }
-    // Replace Firefox 44+'s deprecation warning with unprefixed version.
-    console.warn('navigator.getUserMedia has been replaced by ' +
-                 'navigator.mediaDevices.getUserMedia');
-    navigator.mediaDevices.getUserMedia(constraints).then(onSuccess, onError);
-  };
-};
-
-},{"../utils":8}],7:[function(require,module,exports){
-/*
- *  Copyright (c) 2016 The WebRTC project authors. All Rights Reserved.
- *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree.
- */
-'use strict';
-var safariShim = {
-  // TODO: DrAlex, should be here, double check against LayoutTests
-  // shimOnTrack: function() { },
-
-  // TODO: once the back-end for the mac port is done, add.
-  // TODO: check for webkitGTK+
-  // shimPeerConnection: function() { },
-
-  shimGetUserMedia: function() {
-    navigator.getUserMedia = navigator.webkitGetUserMedia;
-  }
-};
-
-// Expose public methods.
-module.exports = {
-  shimGetUserMedia: safariShim.shimGetUserMedia
-  // TODO
-  // shimOnTrack: safariShim.shimOnTrack,
-  // shimPeerConnection: safariShim.shimPeerConnection
-};
-
-},{}],8:[function(require,module,exports){
-/*
- *  Copyright (c) 2016 The WebRTC project authors. All Rights Reserved.
- *
- *  Use of this source code is governed by a BSD-style license
- *  that can be found in the LICENSE file in the root of the source
- *  tree.
- */
- /* eslint-env node */
-'use strict';
-
-var logDisabled_ = true;
-
-// Utility methods.
-var utils = {
-  disableLog: function(bool) {
-    if (typeof bool !== 'boolean') {
-      return new Error('Argument type: ' + typeof bool +
-          '. Please use a boolean.');
-    }
-    logDisabled_ = bool;
-    return (bool) ? 'adapter.js logging disabled' :
-        'adapter.js logging enabled';
-  },
-
-  log: function() {
-    if (typeof window === 'object') {
-      if (logDisabled_) {
-        return;
-      }
-      if (typeof console !== 'undefined' && typeof console.log === 'function') {
-        console.log.apply(console, arguments);
-      }
-    }
-  },
-
-  /**
-   * Extract browser version out of the provided user agent string.
-   *
-   * @param {!string} uastring userAgent string.
-   * @param {!string} expr Regular expression used as match criteria.
-   * @param {!number} pos position in the version string to be returned.
-   * @return {!number} browser version.
-   */
-  extractVersion: function(uastring, expr, pos) {
-    var match = uastring.match(expr);
-    return match && match.length >= pos && parseInt(match[pos], 10);
-  },
-
-  /**
-   * Browser detector.
-   *
-   * @return {object} result containing browser and version
-   *     properties.
-   */
-  detectBrowser: function() {
-    // Returned result object.
-    var result = {};
-    result.browser = null;
-    result.version = null;
-
-    // Fail early if it's not a browser
-    if (typeof window === 'undefined' || !window.navigator) {
-      result.browser = 'Not a browser.';
-      return result;
-    }
-
-    // Firefox.
-    if (navigator.mozGetUserMedia) {
-      result.browser = 'firefox';
-      result.version = this.extractVersion(navigator.userAgent,
-          /Firefox\/([0-9]+)\./, 1);
-
-    // all webkit-based browsers
-    } else if (navigator.webkitGetUserMedia) {
-      // Chrome, Chromium, Webview, Opera, all use the chrome shim for now
-      if (window.webkitRTCPeerConnection) {
-        result.browser = 'chrome';
-        result.version = this.extractVersion(navigator.userAgent,
-          /Chrom(e|ium)\/([0-9]+)\./, 2);
-
-      // Safari or unknown webkit-based
-      // for the time being Safari has support for MediaStreams but not webRTC
-      } else {
-        // Safari UA substrings of interest for reference:
-        // - webkit version:           AppleWebKit/602.1.25 (also used in Op,Cr)
-        // - safari UI version:        Version/9.0.3 (unique to Safari)
-        // - safari UI webkit version: Safari/601.4.4 (also used in Op,Cr)
-        //
-        // if the webkit version and safari UI webkit versions are equals,
-        // ... this is a stable version.
-        //
-        // only the internal webkit version is important today to know if
-        // media streams are supported
-        //
-        if (navigator.userAgent.match(/Version\/(\d+).(\d+)/)) {
-          result.browser = 'safari';
-          result.version = this.extractVersion(navigator.userAgent,
-            /AppleWebKit\/([0-9]+)\./, 1);
-
-        // unknown webkit-based browser
-        } else {
-          result.browser = 'Unsupported webkit-based browser ' +
-              'with GUM support but no WebRTC support.';
-          return result;
-        }
-      }
-
-    // Edge.
-    } else if (navigator.mediaDevices &&
-        navigator.userAgent.match(/Edge\/(\d+).(\d+)$/)) {
-      result.browser = 'edge';
-      result.version = this.extractVersion(navigator.userAgent,
-          /Edge\/(\d+).(\d+)$/, 2);
-
-    // Default fallthrough: not supported.
-    } else {
-      result.browser = 'Not a supported browser.';
-      return result;
-    }
-
-    return result;
-  }
-};
-
-// Export.
-module.exports = {
-  log: utils.log,
-  disableLog: utils.disableLog,
-  browserDetails: utils.detectBrowser(),
-  extractVersion: utils.extractVersion
-};
-
-},{}]},{},[2]);
-
-/**
- * Service module includes {@link module:channelBuilder},
- * {@link module:webChannelManager} and {@link module:messageBuilder}.
- * Services are substitutable stateless objects. Each service is identified by
- * the id provided during construction and some of them can receive messages via `WebChannel` sent
- * by another service.
- *
- * @module service
- * @see module:channelBuilder
- * @see module:webChannelManager
- * @see module:messageBuilder
- */
-
 /**
  * Default timeout for any pending request.
  * @type {number}
@@ -1047,101 +11,149 @@ module.exports = {
 const DEFAULT_REQUEST_TIMEOUT = 60000
 
 /**
+ * Item storage which is separate for each service. The `Map` key is the service `id`.
+ */
+const itemsStorage = new Map()
+
+/**
  * Pending request map. Pending request is when a service uses a Promise
  * which will be fulfilled or rejected somewhere else in code. For exemple when
  * a peer is waiting for a feedback from another peer before Promise has completed.
- * @type {external:Map}
+ * @type {Map}
  */
-const itemsStorage = new Map()
 const requestsStorage = new Map()
 
 /**
- * Each service must implement this interface.
- * @interface
+ * Abstract class which each service should inherit. Each service is independent
+ * and can store data temporarly in order to accomplish its task(s).
  */
-class ServiceInterface {
+class Service {
 
   /**
-   * Timeout event handler
-   * @callback ServiceInterface~onTimeout
+   * It should be invoked only by calling `super` from the children constructor.
+   *
+   * @param {number} id The service unique identifier
    */
-
   constructor (id) {
+    /**
+     * The service unique identifier.
+     * @type {number}
+     */
     this.id = id
     if (!itemsStorage.has(this.id)) itemsStorage.set(this.id, new WeakMap())
     if (!requestsStorage.has(this.id)) requestsStorage.set(this.id, new WeakMap())
   }
 
   /**
-   * Add new pending request.
-   * @param {WebChannel} wc - Web channel to which this request corresponds
-   * @param {number} id - Identifer to which this request corresponds
-   * @param {Object} data - Data to be available when getPendingRequest is called
-   * @param {number} [timeout=DEFAULT_REQUEST_TIMEOUT] - Timeout in milliseconds
-   * @param {ServiceInterface~onTimeout} [onTimeout=() => {}] - Timeout event handler
+   * Add a new pending request identified by `obj` and `id`.
+   * @param {Object} obj
+   * @param {number} id
+   * @param {{resolve: Promise.resolve, reject:Promise.reject}} data
+   * @param {number} [timeout=DEFAULT_REQUEST_TIMEOUT] Timeout in milliseconds
    */
-  setPendingRequest (wc, id, data, timeout = DEFAULT_REQUEST_TIMEOUT) {
-    this.setTo(requestsStorage, wc, id, data)
+  setPendingRequest (obj, id, data, timeout = DEFAULT_REQUEST_TIMEOUT) {
+    this.setTo(requestsStorage, obj, id, data)
     setTimeout(() => { data.reject('Pending request timeout') }, timeout)
   }
 
   /**
-   * Get pending request corresponding to the specific WebChannel and identifier.
-   * @param  {WebChannel} wc - Web channel
-   * @param  {number} id - Identifier
-   * @return {Object} - Javascript object corresponding to the one provided in
-   * setPendingRequest function
+   * Get pending request identified by `obj` and `id`.
+   *
+   * @param  {Object} obj
+   * @param  {number} id
+   * @returns {{resolve: Promise.resolve, reject:Promise.reject}}
    */
-  getPendingRequest (wc, id) {
-    return this.getFrom(requestsStorage, wc, id)
+  getPendingRequest (obj, id) {
+    return this.getFrom(requestsStorage, obj, id)
   }
 
-  setItem (wc, id, data) {
-    this.setTo(itemsStorage, wc, id, data)
+  /**
+   * Add item with `obj` and `ìd` as identifier.
+   * @param {Object} obj
+   * @param {number} id
+   * @param {Object} data
+   */
+  setItem (obj, id, data) {
+    this.setTo(itemsStorage, obj, id, data)
   }
 
-  getItem (wc, id) {
-    return this.getFrom(itemsStorage, wc, id)
+  /**
+   * Get item identified by `obj` and `id`.
+   *
+   * @param {Object} obj
+   * @param {number} id
+   *
+   * @returns {Object}
+   */
+  getItem (obj, id) {
+    return this.getFrom(itemsStorage, obj, id)
   }
 
-  getItems (wc) {
-    let items = itemsStorage.get(this.id).get(wc)
+  /**
+   * Get all items belonging to `obj`.
+   *
+   * @param {Object} obj
+   * @returns {Map}
+   */
+  getItems (obj) {
+    let items = itemsStorage.get(this.id).get(obj)
     if (items) return items
     else return new Map()
   }
 
-  removeItem (wc, id) {
+  /**
+   * Remove item identified by `obj` and `id`.
+   *
+   * @param {Object} obj
+   * @param {number} id
+   */
+  removeItem (obj, id) {
     let currentServiceTemp = itemsStorage.get(this.id)
-    let idMap = currentServiceTemp.get(wc)
-    currentServiceTemp.get(wc).delete(id)
-    if (idMap.size === 0) currentServiceTemp.delete(wc)
+    let idMap = currentServiceTemp.get(obj)
+    currentServiceTemp.get(obj).delete(id)
+    if (idMap.size === 0) currentServiceTemp.delete(obj)
   }
 
-  setTo (storage, wc, id, data) {
-    let currentServiceTemp = storage.get(this.id)
-    let idMap
-    if (currentServiceTemp.has(wc)) {
-      idMap = currentServiceTemp.get(wc)
-    } else {
-      idMap = new Map()
-      currentServiceTemp.set(wc, idMap)
-    }
-    if (!idMap.has(id)) idMap.set(id, data)
-  }
-
-  getFrom (storage, wc, id) {
-    let idMap = storage.get(this.id).get(wc)
+  /**
+   * @private
+   * @param {Map} storage
+   * @param {Object} obj
+   * @param {number} id
+   *
+   * @returns {Object}
+   */
+  getFrom (storage, obj, id) {
+    let idMap = storage.get(this.id).get(obj)
     if (idMap !== undefined) {
       let item = idMap.get(id)
       if (item !== undefined) return item
     }
     return null
   }
+
+  /**
+   * @private
+   * @param {Map} storage
+   * @param {WebChannel} obj
+   * @param {number} id
+   * @param {Object} data
+   *
+   */
+  setTo (storage, obj, id, data) {
+    let currentServiceTemp = storage.get(this.id)
+    let idMap
+    if (currentServiceTemp.has(obj)) {
+      idMap = currentServiceTemp.get(obj)
+    } else {
+      idMap = new Map()
+      currentServiceTemp.set(obj, idMap)
+    }
+    if (!idMap.has(id)) idMap.set(id, data)
+  }
 }
 
 /**
- * Web Channel Manager module is a submodule of {@link module:service} and the
- * main component of any Web Channel. It is responsible to preserve Web Channel
+ * It is responsible to preserve Web Channel
  * structure intact (i.e. all peers have the same vision of the Web Channel).
  * Among its duties are:
  *
@@ -1150,16 +162,10 @@ class ServiceInterface {
  * - Send a broadcast message.
  * - Send a message to a particular peer.
  *
- * @module webChannelManager
  * @see FullyConnectedService
- */
-
-/**
- * Each Web Channel Manager Service must implement this interface.
  * @interface
- * @extends module:service~ServiceInterface
  */
-class ManagerInterface extends ServiceInterface {
+class TopologyInterface extends Service {
 
   connectTo (wc, peerIds) {
     let failed = []
@@ -1167,7 +173,7 @@ class ManagerInterface extends ServiceInterface {
     else {
       return new Promise((resolve, reject) => {
         let counter = 0
-        let cBuilder = provide(CHANNEL_BUILDER)
+        let cBuilder = ServiceFactory.get(CHANNEL_BUILDER)
         peerIds.forEach(id => {
           cBuilder.connectTo(wc, id)
             .then(channel => this.onChannel(channel))
@@ -1229,7 +235,7 @@ class ManagerInterface extends ServiceInterface {
 }
 
 /**
- * One of the internal message type. The message is intended for the *WebChannel*
+ * One of the internal message type. The message is intended for the `WebChannel`
  * members to notify them about the joining peer.
  * @type {number}
  */
@@ -1241,7 +247,7 @@ const SHOULD_ADD_NEW_JOINING_PEER = 1
 const SHOULD_CONNECT_TO = 2
 /**
  * One of the internal message type. The message sent by the joining peer to
- * notify all *WebChannel* members about his arrivel.
+ * notify all `WebChannel` members about his arrivel.
  * @type {number}
  */
 const PEER_JOINED = 3
@@ -1253,10 +259,17 @@ const TOCK = 5
  * Fully connected web channel manager. Implements fully connected topology
  * network, when each peer is connected to each other.
  *
- * @extends module:webChannelManager~WebChannelManagerInterface
+ * @extends module:webChannelManager~WebChannelTopologyInterface
  */
-class FullyConnectedService extends ManagerInterface {
+class FullyConnectedService extends TopologyInterface {
 
+  /**
+   * Add a peer to the `WebChannel`.
+   *
+   * @param {WebSocket|RTCDataChannel} channel
+   *
+   * @returns {Promise<number, string}
+   */
   add (channel) {
     let wc = channel.webChannel
     let peers = wc.members.slice()
@@ -1269,6 +282,12 @@ class FullyConnectedService extends ManagerInterface {
     })
   }
 
+  /**
+   * Send message to all `WebChannel` members.
+   *
+   * @param {WebChannel} webChannel
+   * @param {ArrayBuffer} data
+   */
   broadcast (webChannel, data) {
     for (let c of webChannel.channels) c.send(data)
   }
@@ -1297,6 +316,12 @@ class FullyConnectedService extends ManagerInterface {
     }
   }
 
+  sendInner (wc, data) {
+    let jp = super.getItem(wc, wc.myId)
+    if (jp === null) this.broadcast(wc, data)
+    else jp.channel.send(data)
+  }
+
   leave (wc) {
     for (let c of wc.channels) {
       c.clearHandlers()
@@ -1313,11 +338,14 @@ class FullyConnectedService extends ManagerInterface {
   }
 
   /**
-   * Close event handler for each *Channel* in the *WebChannel*.
-   * @private
-   * @param {external:CloseEvent} closeEvt - Close event
+   * Close event handler for each `Channel` in the `WebChannel`.
+   *
+   * @param {CloseEvent} closeEvt
+   * @param {Channel} channel
+   *
+   * @returns {boolean}
    */
-  onChannelClose (evt, channel) {
+  onChannelClose (closeEvt, channel) {
     // TODO: need to check if this is a peer leaving and thus he closed channels
     // with all WebChannel members or this is abnormal channel closing
     let wc = channel.webChannel
@@ -1330,39 +358,42 @@ class FullyConnectedService extends ManagerInterface {
   }
 
   /**
-   * Error event handler for each *Channel* in the *WebChannel*.
-   * @private
-   * @param {external:Event} evt - Event
+   * Error event handler for each `Channel` in the `WebChannel`.
+   *
+   * @param {Event} evt
+   * @param {Channel} channel
    */
   onChannelError (evt, channel) {
-    console.error(`Channel error with id: ${channel.peerId}`)
+    console.error(`Channel error with id: ${channel.peerId}: `, evt)
   }
 
   onMessage (channel, senderId, recepientId, msg) {
     let wc = channel.webChannel
+    let jpMe
     switch (msg.code) {
       case SHOULD_CONNECT_TO:
-        this.setJP(wc, wc.myId, channel).channels.add(channel)
+        jpMe = this.setJP(wc, wc.myId, channel)
+        jpMe.channels.add(channel)
         super.connectTo(wc, msg.peers)
           .then(failed => {
             let msg = {code: PEER_JOINED}
-            for (let c of super.getItem(wc, wc.myId).channels) {
-              wc.channels.add(c)
-              wc.onJoining$(c.peerId)
-            }
+            jpMe.channels.forEach(ch => {
+              wc.sendInnerTo(ch, this.id, msg)
+              wc.channels.add(ch)
+              wc.onPeerJoin$(ch.peerId)
+            })
             super.removeItem(wc, wc.myId)
-            wc.sendInner(this.id, msg)
             super.getItems(wc).forEach(jp => wc.sendInnerTo(jp.channel, this.id, msg))
             wc.onJoin()
           })
         break
       case PEER_JOINED:
-        let jpMe = super.getItem(wc, wc.myId)
+        jpMe = super.getItem(wc, wc.myId)
         super.removeItem(wc, senderId)
         if (jpMe !== null) jpMe.channels.add(channel)
         else {
           wc.channels.add(channel)
-          wc.onJoining$(senderId)
+          wc.onPeerJoin$(senderId)
           let request = super.getPendingRequest(wc, senderId)
           if (request !== null) request.resolve(senderId)
         }
@@ -1383,6 +414,14 @@ class FullyConnectedService extends ManagerInterface {
     }
   }
 
+  /**
+   * @private
+   * @param {WebChannel} wc
+   * @param {number} jpId
+   * @param {WebSocket|RTCDataChannel} channel
+   *
+   * @returns {type} Description
+   */
   setJP (wc, jpId, channel) {
     let jp = super.getItem(wc, jpId)
     if (!jp) {
@@ -1401,7 +440,7 @@ class FullyConnectedService extends ManagerInterface {
  * regardless of success, these instances will be deleted.
  */
 class JoiningPeer {
-  constructor (channel) {
+  constructor (channel, onJoin) {
     /**
      * The channel between the joining peer and intermediary peer. It is null
      * for every peer, but the joining and intermediary peers.
@@ -1419,95 +458,153 @@ class JoiningPeer {
   }
 }
 
-const message = new WeakMap()
+!function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a="function"==typeof require&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}for(var i="function"==typeof require&&require,o=0;o<r.length;o++)s(r[o]);return s}({1:[function(require,module,exports){},{}],2:[function(require,module,exports){"use strict";!function(){var logging=require("./utils").log,browserDetails=require("./utils").browserDetails;module.exports.browserDetails=browserDetails,module.exports.extractVersion=require("./utils").extractVersion,module.exports.disableLog=require("./utils").disableLog;var chromeShim=require("./chrome/chrome_shim")||null,edgeShim=require("./edge/edge_shim")||null,firefoxShim=require("./firefox/firefox_shim")||null,safariShim=require("./safari/safari_shim")||null;switch(browserDetails.browser){case"opera":case"chrome":if(!chromeShim||!chromeShim.shimPeerConnection)return void logging("Chrome shim is not included in this adapter release.");logging("adapter.js shimming chrome."),module.exports.browserShim=chromeShim,chromeShim.shimGetUserMedia(),chromeShim.shimMediaStream(),chromeShim.shimSourceObject(),chromeShim.shimPeerConnection(),chromeShim.shimOnTrack();break;case"firefox":if(!firefoxShim||!firefoxShim.shimPeerConnection)return void logging("Firefox shim is not included in this adapter release.");logging("adapter.js shimming firefox."),module.exports.browserShim=firefoxShim,firefoxShim.shimGetUserMedia(),firefoxShim.shimSourceObject(),firefoxShim.shimPeerConnection(),firefoxShim.shimOnTrack();break;case"edge":if(!edgeShim||!edgeShim.shimPeerConnection)return void logging("MS edge shim is not included in this adapter release.");logging("adapter.js shimming edge."),module.exports.browserShim=edgeShim,edgeShim.shimGetUserMedia(),edgeShim.shimPeerConnection();break;case"safari":if(!safariShim)return void logging("Safari shim is not included in this adapter release.");logging("adapter.js shimming safari."),module.exports.browserShim=safariShim,safariShim.shimGetUserMedia();break;default:logging("Unsupported browser!")}}()},{"./chrome/chrome_shim":3,"./edge/edge_shim":1,"./firefox/firefox_shim":5,"./safari/safari_shim":7,"./utils":8}],3:[function(require,module,exports){"use strict";var logging=require("../utils.js").log,browserDetails=require("../utils.js").browserDetails,chromeShim={shimMediaStream:function(){window.MediaStream=window.MediaStream||window.webkitMediaStream},shimOnTrack:function(){"object"!=typeof window||!window.RTCPeerConnection||"ontrack"in window.RTCPeerConnection.prototype||Object.defineProperty(window.RTCPeerConnection.prototype,"ontrack",{get:function(){return this._ontrack},set:function(f){var self=this;this._ontrack&&(this.removeEventListener("track",this._ontrack),this.removeEventListener("addstream",this._ontrackpoly)),this.addEventListener("track",this._ontrack=f),this.addEventListener("addstream",this._ontrackpoly=function(e){e.stream.addEventListener("addtrack",function(te){var event=new Event("track");event.track=te.track,event.receiver={track:te.track},event.streams=[e.stream],self.dispatchEvent(event)}),e.stream.getTracks().forEach(function(track){var event=new Event("track");event.track=track,event.receiver={track:track},event.streams=[e.stream],this.dispatchEvent(event)}.bind(this))}.bind(this))}})},shimSourceObject:function(){"object"==typeof window&&(!window.HTMLMediaElement||"srcObject"in window.HTMLMediaElement.prototype||Object.defineProperty(window.HTMLMediaElement.prototype,"srcObject",{get:function(){return this._srcObject},set:function(stream){var self=this;return this._srcObject=stream,this.src&&URL.revokeObjectURL(this.src),stream?(this.src=URL.createObjectURL(stream),stream.addEventListener("addtrack",function(){self.src&&URL.revokeObjectURL(self.src),self.src=URL.createObjectURL(stream)}),void stream.addEventListener("removetrack",function(){self.src&&URL.revokeObjectURL(self.src),self.src=URL.createObjectURL(stream)})):void(this.src="")}}))},shimPeerConnection:function(){window.RTCPeerConnection=function(pcConfig,pcConstraints){logging("PeerConnection"),pcConfig&&pcConfig.iceTransportPolicy&&(pcConfig.iceTransports=pcConfig.iceTransportPolicy);var pc=new webkitRTCPeerConnection(pcConfig,pcConstraints),origGetStats=pc.getStats.bind(pc);return pc.getStats=function(selector,successCallback,errorCallback){var self=this,args=arguments;if(arguments.length>0&&"function"==typeof selector)return origGetStats(selector,successCallback);var fixChromeStats_=function(response){var standardReport={},reports=response.result();return reports.forEach(function(report){var standardStats={id:report.id,timestamp:report.timestamp,type:report.type};report.names().forEach(function(name){standardStats[name]=report.stat(name)}),standardReport[standardStats.id]=standardStats}),standardReport},makeMapStats=function(stats,legacyStats){var map=new Map(Object.keys(stats).map(function(key){return[key,stats[key]]}));return legacyStats=legacyStats||stats,Object.keys(legacyStats).forEach(function(key){map[key]=legacyStats[key]}),map};if(arguments.length>=2){var successCallbackWrapper_=function(response){args[1](makeMapStats(fixChromeStats_(response)))};return origGetStats.apply(this,[successCallbackWrapper_,arguments[0]])}return new Promise(function(resolve,reject){1===args.length&&"object"==typeof selector?origGetStats.apply(self,[function(response){resolve(makeMapStats(fixChromeStats_(response)))},reject]):origGetStats.apply(self,[function(response){resolve(makeMapStats(fixChromeStats_(response),response.result()))},reject])}).then(successCallback,errorCallback)},pc},window.RTCPeerConnection.prototype=webkitRTCPeerConnection.prototype,webkitRTCPeerConnection.generateCertificate&&Object.defineProperty(window.RTCPeerConnection,"generateCertificate",{get:function(){return webkitRTCPeerConnection.generateCertificate}}),["createOffer","createAnswer"].forEach(function(method){var nativeMethod=webkitRTCPeerConnection.prototype[method];webkitRTCPeerConnection.prototype[method]=function(){var self=this;if(arguments.length<1||1===arguments.length&&"object"==typeof arguments[0]){var opts=1===arguments.length?arguments[0]:void 0;return new Promise(function(resolve,reject){nativeMethod.apply(self,[resolve,reject,opts])})}return nativeMethod.apply(this,arguments)}}),browserDetails.version<51&&["setLocalDescription","setRemoteDescription","addIceCandidate"].forEach(function(method){var nativeMethod=webkitRTCPeerConnection.prototype[method];webkitRTCPeerConnection.prototype[method]=function(){var args=arguments,self=this,promise=new Promise(function(resolve,reject){nativeMethod.apply(self,[args[0],resolve,reject])});return args.length<2?promise:promise.then(function(){args[1].apply(null,[])},function(err){args.length>=3&&args[2].apply(null,[err])})}}),["setLocalDescription","setRemoteDescription","addIceCandidate"].forEach(function(method){var nativeMethod=webkitRTCPeerConnection.prototype[method];webkitRTCPeerConnection.prototype[method]=function(){return arguments[0]=new("addIceCandidate"===method?RTCIceCandidate:RTCSessionDescription)(arguments[0]),nativeMethod.apply(this,arguments)}});var nativeAddIceCandidate=RTCPeerConnection.prototype.addIceCandidate;RTCPeerConnection.prototype.addIceCandidate=function(){return null===arguments[0]?Promise.resolve():nativeAddIceCandidate.apply(this,arguments)}}};module.exports={shimMediaStream:chromeShim.shimMediaStream,shimOnTrack:chromeShim.shimOnTrack,shimSourceObject:chromeShim.shimSourceObject,shimPeerConnection:chromeShim.shimPeerConnection,shimGetUserMedia:require("./getusermedia")}},{"../utils.js":8,"./getusermedia":4}],4:[function(require,module,exports){"use strict";var logging=require("../utils.js").log;module.exports=function(){var constraintsToChrome_=function(c){if("object"!=typeof c||c.mandatory||c.optional)return c;var cc={};return Object.keys(c).forEach(function(key){if("require"!==key&&"advanced"!==key&&"mediaSource"!==key){var r="object"==typeof c[key]?c[key]:{ideal:c[key]};void 0!==r.exact&&"number"==typeof r.exact&&(r.min=r.max=r.exact);var oldname_=function(prefix,name){return prefix?prefix+name.charAt(0).toUpperCase()+name.slice(1):"deviceId"===name?"sourceId":name};if(void 0!==r.ideal){cc.optional=cc.optional||[];var oc={};"number"==typeof r.ideal?(oc[oldname_("min",key)]=r.ideal,cc.optional.push(oc),oc={},oc[oldname_("max",key)]=r.ideal,cc.optional.push(oc)):(oc[oldname_("",key)]=r.ideal,cc.optional.push(oc))}void 0!==r.exact&&"number"!=typeof r.exact?(cc.mandatory=cc.mandatory||{},cc.mandatory[oldname_("",key)]=r.exact):["min","max"].forEach(function(mix){void 0!==r[mix]&&(cc.mandatory=cc.mandatory||{},cc.mandatory[oldname_(mix,key)]=r[mix])})}}),c.advanced&&(cc.optional=(cc.optional||[]).concat(c.advanced)),cc},shimConstraints_=function(constraints,func){if(constraints=JSON.parse(JSON.stringify(constraints)),constraints&&constraints.audio&&(constraints.audio=constraintsToChrome_(constraints.audio)),constraints&&"object"==typeof constraints.video){var face=constraints.video.facingMode;if(face=face&&("object"==typeof face?face:{ideal:face}),face&&("user"===face.exact||"environment"===face.exact||"user"===face.ideal||"environment"===face.ideal)&&(!navigator.mediaDevices.getSupportedConstraints||!navigator.mediaDevices.getSupportedConstraints().facingMode)&&(delete constraints.video.facingMode,"environment"===face.exact||"environment"===face.ideal))return navigator.mediaDevices.enumerateDevices().then(function(devices){devices=devices.filter(function(d){return"videoinput"===d.kind});var back=devices.find(function(d){return d.label.toLowerCase().indexOf("back")!==-1})||devices.length&&devices[devices.length-1];return back&&(constraints.video.deviceId=face.exact?{exact:back.deviceId}:{ideal:back.deviceId}),constraints.video=constraintsToChrome_(constraints.video),logging("chrome: "+JSON.stringify(constraints)),func(constraints)});constraints.video=constraintsToChrome_(constraints.video)}return logging("chrome: "+JSON.stringify(constraints)),func(constraints)},shimError_=function(e){return{name:{PermissionDeniedError:"NotAllowedError",ConstraintNotSatisfiedError:"OverconstrainedError"}[e.name]||e.name,message:e.message,constraint:e.constraintName,toString:function(){return this.name+(this.message&&": ")+this.message}}},getUserMedia_=function(constraints,onSuccess,onError){shimConstraints_(constraints,function(c){navigator.webkitGetUserMedia(c,onSuccess,function(e){onError(shimError_(e))})})};navigator.getUserMedia=getUserMedia_;var getUserMediaPromise_=function(constraints){return new Promise(function(resolve,reject){navigator.getUserMedia(constraints,resolve,reject)})};if(navigator.mediaDevices||(navigator.mediaDevices={getUserMedia:getUserMediaPromise_,enumerateDevices:function(){return new Promise(function(resolve){var kinds={audio:"audioinput",video:"videoinput"};return MediaStreamTrack.getSources(function(devices){resolve(devices.map(function(device){return{label:device.label,kind:kinds[device.kind],deviceId:device.id,groupId:""}}))})})}}),navigator.mediaDevices.getUserMedia){var origGetUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=function(cs){return shimConstraints_(cs,function(c){return origGetUserMedia(c).then(function(stream){if(c.audio&&!stream.getAudioTracks().length||c.video&&!stream.getVideoTracks().length)throw stream.getTracks().forEach(function(track){track.stop()}),new DOMException("","NotFoundError");return stream},function(e){return Promise.reject(shimError_(e))})})}}else navigator.mediaDevices.getUserMedia=function(constraints){return getUserMediaPromise_(constraints)};"undefined"==typeof navigator.mediaDevices.addEventListener&&(navigator.mediaDevices.addEventListener=function(){logging("Dummy mediaDevices.addEventListener called.")}),"undefined"==typeof navigator.mediaDevices.removeEventListener&&(navigator.mediaDevices.removeEventListener=function(){logging("Dummy mediaDevices.removeEventListener called.")})}},{"../utils.js":8}],5:[function(require,module,exports){"use strict";var browserDetails=require("../utils").browserDetails,firefoxShim={shimOnTrack:function(){"object"!=typeof window||!window.RTCPeerConnection||"ontrack"in window.RTCPeerConnection.prototype||Object.defineProperty(window.RTCPeerConnection.prototype,"ontrack",{get:function(){return this._ontrack},set:function(f){this._ontrack&&(this.removeEventListener("track",this._ontrack),this.removeEventListener("addstream",this._ontrackpoly)),this.addEventListener("track",this._ontrack=f),this.addEventListener("addstream",this._ontrackpoly=function(e){e.stream.getTracks().forEach(function(track){var event=new Event("track");event.track=track,event.receiver={track:track},event.streams=[e.stream],this.dispatchEvent(event)}.bind(this))}.bind(this))}})},shimSourceObject:function(){"object"==typeof window&&(!window.HTMLMediaElement||"srcObject"in window.HTMLMediaElement.prototype||Object.defineProperty(window.HTMLMediaElement.prototype,"srcObject",{get:function(){return this.mozSrcObject},set:function(stream){this.mozSrcObject=stream}}))},shimPeerConnection:function(){if("object"==typeof window&&(window.RTCPeerConnection||window.mozRTCPeerConnection)){window.RTCPeerConnection||(window.RTCPeerConnection=function(pcConfig,pcConstraints){if(browserDetails.version<38&&pcConfig&&pcConfig.iceServers){for(var newIceServers=[],i=0;i<pcConfig.iceServers.length;i++){var server=pcConfig.iceServers[i];if(server.hasOwnProperty("urls"))for(var j=0;j<server.urls.length;j++){var newServer={url:server.urls[j]};0===server.urls[j].indexOf("turn")&&(newServer.username=server.username,newServer.credential=server.credential),newIceServers.push(newServer)}else newIceServers.push(pcConfig.iceServers[i])}pcConfig.iceServers=newIceServers}return new mozRTCPeerConnection(pcConfig,pcConstraints)},window.RTCPeerConnection.prototype=mozRTCPeerConnection.prototype,mozRTCPeerConnection.generateCertificate&&Object.defineProperty(window.RTCPeerConnection,"generateCertificate",{get:function(){return mozRTCPeerConnection.generateCertificate}}),window.RTCSessionDescription=mozRTCSessionDescription,window.RTCIceCandidate=mozRTCIceCandidate),["setLocalDescription","setRemoteDescription","addIceCandidate"].forEach(function(method){var nativeMethod=RTCPeerConnection.prototype[method];RTCPeerConnection.prototype[method]=function(){return arguments[0]=new("addIceCandidate"===method?RTCIceCandidate:RTCSessionDescription)(arguments[0]),nativeMethod.apply(this,arguments)}});var nativeAddIceCandidate=RTCPeerConnection.prototype.addIceCandidate;RTCPeerConnection.prototype.addIceCandidate=function(){return null===arguments[0]?Promise.resolve():nativeAddIceCandidate.apply(this,arguments)};var makeMapStats=function(stats){var map=new Map;return Object.keys(stats).forEach(function(key){map.set(key,stats[key]),map[key]=stats[key]}),map},nativeGetStats=RTCPeerConnection.prototype.getStats;RTCPeerConnection.prototype.getStats=function(selector,onSucc,onErr){return nativeGetStats.apply(this,[selector||null]).then(function(stats){return makeMapStats(stats)}).then(onSucc,onErr)}}}};module.exports={shimOnTrack:firefoxShim.shimOnTrack,shimSourceObject:firefoxShim.shimSourceObject,shimPeerConnection:firefoxShim.shimPeerConnection,shimGetUserMedia:require("./getusermedia")}},{"../utils":8,"./getusermedia":6}],6:[function(require,module,exports){"use strict";var logging=require("../utils").log,browserDetails=require("../utils").browserDetails;module.exports=function(){var shimError_=function(e){return{name:{SecurityError:"NotAllowedError",PermissionDeniedError:"NotAllowedError"}[e.name]||e.name,message:{"The operation is insecure.":"The request is not allowed by the user agent or the platform in the current context."}[e.message]||e.message,constraint:e.constraint,toString:function(){return this.name+(this.message&&": ")+this.message}}},getUserMedia_=function(constraints,onSuccess,onError){var constraintsToFF37_=function(c){if("object"!=typeof c||c.require)return c;var require=[];return Object.keys(c).forEach(function(key){if("require"!==key&&"advanced"!==key&&"mediaSource"!==key){var r=c[key]="object"==typeof c[key]?c[key]:{ideal:c[key]};if(void 0===r.min&&void 0===r.max&&void 0===r.exact||require.push(key),void 0!==r.exact&&("number"==typeof r.exact?r.min=r.max=r.exact:c[key]=r.exact,delete r.exact),void 0!==r.ideal){c.advanced=c.advanced||[];var oc={};"number"==typeof r.ideal?oc[key]={min:r.ideal,max:r.ideal}:oc[key]=r.ideal,c.advanced.push(oc),delete r.ideal,Object.keys(r).length||delete c[key]}}}),require.length&&(c.require=require),c};return constraints=JSON.parse(JSON.stringify(constraints)),browserDetails.version<38&&(logging("spec: "+JSON.stringify(constraints)),constraints.audio&&(constraints.audio=constraintsToFF37_(constraints.audio)),constraints.video&&(constraints.video=constraintsToFF37_(constraints.video)),logging("ff37: "+JSON.stringify(constraints))),navigator.mozGetUserMedia(constraints,onSuccess,function(e){onError(shimError_(e))})},getUserMediaPromise_=function(constraints){return new Promise(function(resolve,reject){getUserMedia_(constraints,resolve,reject)})};if(navigator.mediaDevices||(navigator.mediaDevices={getUserMedia:getUserMediaPromise_,addEventListener:function(){},removeEventListener:function(){}}),navigator.mediaDevices.enumerateDevices=navigator.mediaDevices.enumerateDevices||function(){return new Promise(function(resolve){var infos=[{kind:"audioinput",deviceId:"default",label:"",groupId:""},{kind:"videoinput",deviceId:"default",label:"",groupId:""}];resolve(infos)})},browserDetails.version<41){var orgEnumerateDevices=navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);navigator.mediaDevices.enumerateDevices=function(){return orgEnumerateDevices().then(void 0,function(e){if("NotFoundError"===e.name)return[];throw e})}}if(browserDetails.version<49){var origGetUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=function(c){return origGetUserMedia(c).then(function(stream){if(c.audio&&!stream.getAudioTracks().length||c.video&&!stream.getVideoTracks().length)throw stream.getTracks().forEach(function(track){track.stop()}),new DOMException("The object can not be found here.","NotFoundError");return stream},function(e){return Promise.reject(shimError_(e))})}}navigator.getUserMedia=function(constraints,onSuccess,onError){return browserDetails.version<44?getUserMedia_(constraints,onSuccess,onError):(console.warn("navigator.getUserMedia has been replaced by navigator.mediaDevices.getUserMedia"),void navigator.mediaDevices.getUserMedia(constraints).then(onSuccess,onError))}}},{"../utils":8}],7:[function(require,module,exports){"use strict";var safariShim={shimGetUserMedia:function(){navigator.getUserMedia=navigator.webkitGetUserMedia}};module.exports={shimGetUserMedia:safariShim.shimGetUserMedia}},{}],8:[function(require,module,exports){"use strict";var logDisabled_=!0,utils={disableLog:function(bool){return"boolean"!=typeof bool?new Error("Argument type: "+typeof bool+". Please use a boolean."):(logDisabled_=bool,bool?"adapter.js logging disabled":"adapter.js logging enabled")},log:function(){if("object"==typeof window){if(logDisabled_)return;"undefined"!=typeof console&&"function"==typeof console.log&&console.log.apply(console,arguments)}},extractVersion:function(uastring,expr,pos){var match=uastring.match(expr);return match&&match.length>=pos&&parseInt(match[pos],10)},detectBrowser:function(){var result={};if(result.browser=null,result.version=null,"undefined"==typeof window||!window.navigator)return result.browser="Not a browser.",result;if(navigator.mozGetUserMedia)result.browser="firefox",result.version=this.extractVersion(navigator.userAgent,/Firefox\/([0-9]+)\./,1);else if(navigator.webkitGetUserMedia)if(window.webkitRTCPeerConnection)result.browser="chrome",result.version=this.extractVersion(navigator.userAgent,/Chrom(e|ium)\/([0-9]+)\./,2);else{if(!navigator.userAgent.match(/Version\/(\d+).(\d+)/))return result.browser="Unsupported webkit-based browser with GUM support but no WebRTC support.",result;result.browser="safari",result.version=this.extractVersion(navigator.userAgent,/AppleWebKit\/([0-9]+)\./,1)}else{if(!navigator.mediaDevices||!navigator.userAgent.match(/Edge\/(\d+).(\d+)$/))return result.browser="Not a supported browser.",result;result.browser="edge",result.version=this.extractVersion(navigator.userAgent,/Edge\/(\d+).(\d+)$/,2)}return result}};module.exports={log:utils.log,disableLog:utils.disableLog,browserDetails:utils.detectBrowser(),extractVersion:utils.extractVersion}},{}]},{},[2]);
 
-class NodeCloseEvent {
-  constructor (msg) {
-    message.set(this, msg)
-  }
-
-  get message () {
-    return message.get(this)
+let NodeCloseEvent = class CloseEvent {
+  constructor (options = {}) {
+    this.wasClean = options.wasClean
+    this.code = options.code
+    this.reason = options.reason
   }
 }
 
-function isBrowser () {
-  if (typeof window === 'undefined' || (typeof process !== 'undefined' && process.title === 'node')) {
-    return false
+/**
+ * Utility class contains some helper static methods.
+ */
+class Util {
+  /**
+   * Create `CloseEvent`.
+   *
+   * @param {number} code
+   * @param {string} [reason=]
+   * @param {boolean} [wasClean=true]
+   *
+   * @returns {CloseEvent|NodeCloseEvent}
+   */
+  static createCloseEvent (code, reason = '', wasClean = true) {
+    let obj = {wasClean, code, reason}
+    if (Util.isBrowser()) {
+      return new CloseEvent('netfluxClose', obj)
+    } else {
+      return new NodeCloseEvent(obj)
+    }
   }
-  return true
-}
 
-function isSocket (channel) {
-  return channel.constructor.name === 'WebSocket'
+  /**
+   * Check execution environment.
+   *
+   * @returns {boolean} Description
+   */
+  static isBrowser () {
+    if (typeof window === 'undefined' || (typeof process !== 'undefined' && process.title === 'node')) {
+      return false
+    }
+    return true
+  }
+
+  /**
+   * Check whether the channel is a socket.
+   *
+   * @param {WebSocket|RTCDataChannel} channel
+   *
+   * @returns {boolean}
+   */
+  static isSocket (channel) {
+    return channel.constructor.name === 'WebSocket'
+  }
+
+  /**
+   * Check whether the string is a valid URL.
+   *
+   * @param {string} str
+   *
+   * @returns {type} Description
+   */
+  static isURL (str) {
+    let regex =
+      '^' +
+      // protocol identifier
+      '(?:(?:wss|ws)://)' +
+      // user:pass authentication
+      '(?:\\S+(?::\\S*)?@)?' +
+      '(?:'
+
+    let tld = '(?:\\.(?:[a-z\\u00a1-\\uffff]{2,}))?'
+
+    regex +=
+        // IP address dotted notation octets
+        // excludes loopback network 0.0.0.0
+        // excludes reserved space >= 224.0.0.0
+        // excludes network & broacast addresses
+        // (first & last IP address of each class)
+        '(?:[1-9]\\d?|1\\d\\d|2[01]\\d|22[0-3])' +
+        '(?:\\.(?:1?\\d{1,2}|2[0-4]\\d|25[0-5])){2}' +
+        '(?:\\.(?:[1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-4]))' +
+      '|' +
+        // host name
+        '(?:(?:[a-z\\u00a1-\\uffff0-9]-*)*[a-z\\u00a1-\\uffff0-9]+)' +
+        // domain name
+        '(?:\\.(?:[a-z\\u00a1-\\uffff0-9]-*)*[a-z\\u00a1-\\uffff0-9]+)*' +
+        tld +
+      ')' +
+      // port number
+      '(?::\\d{2,5})?' +
+      // resource path
+      '(?:[/?#]\\S*)?' +
+    '$'
+
+    if (!(new RegExp(regex, 'i')).exec(str)) return false
+    return true
+  }
 }
 
 const CONNECT_TIMEOUT = 30000
+const REMOVE_ITEM_TIMEOUT = 5000
 let src
+/**
+* @ignore
+ * @type {boolean}
+ */
 let webRTCAvailable = true
-if (isBrowser()) src = window
-else {
+if (Util.isBrowser()) {
+  src = window
+} else {
   try {
     src = require('wrtc')
-    src.CloseEvent = NodeCloseEvent
   } catch (err) {
+    src = {}
     webRTCAvailable = false
   }
 }
 const RTCPeerConnection$1 = src.RTCPeerConnection
 const RTCIceCandidate$1 = src.RTCIceCandidate
-const CloseEvent = src.CloseEvent
-
-/**
- * Ice candidate event handler.
- *
- * @callback WebRTCService~onCandidate
- * @param {external:RTCPeerConnectionIceEvent} evt - Event.
- */
-
-/**
- * Session description event handler.
- *
- * @callback WebRTCService~onSDP
- * @param {external:RTCPeerConnectionIceEvent} evt - Event.
- */
-
-/**
- * Data channel event handler.
- *
- * @callback WebRTCService~onChannel
- * @param {external:RTCPeerConnectionIceEvent} evt - Event.
- */
 
 /**
  * Service class responsible to establish connections between peers via
  * `RTCDataChannel`.
  *
- * @see {@link external:RTCPeerConnection}
- * @extends module:channelBuilder~ChannelBuilderInterface
  */
-class WebRTCService extends ServiceInterface {
+class WebRTCService extends Service {
 
   /**
-   * WebRTCService constructor.
-   *
-   * @param  {Object} [options] - This service options.
-   * @param  {Object} [options.signaling='ws://sigver-coastteam.rhcloud.com:8000'] -
-   * Signaling server URL.
-   * @param  {Object[]} [options.iceServers=[{urls: 'stun:23.21.150.121'},{urls: 'stun:stun.l.google.com:19302'},{urls: 'turn:numb.viagenie.ca', credential: 'webrtcdemo', username: 'louis%40mozilla.com'}]] - WebRTC options to setup which STUN
-   * and TURN servers to be used.
+   * @param  {number} id Service identifier
+   * @param  {RTCIceServer} iceServers WebRTC configuration object
    */
-  constructor (id, options = {}) {
+  constructor (id, iceServers) {
     super(id)
-    this.defaults = {
-      signaling: 'ws://sigver-coastteam.rhcloud.com:8000',
-      iceServers: [
-        {urls: 'stun:turn01.uswest.xirsys.com'}
-      ]
-    }
-    this.settings = Object.assign({}, this.defaults, options)
+    /**
+     * @private
+     * @type {RTCIceServer}
+     */
+    this.iceServers = iceServers
   }
 
+  /**
+   * @param {Channel} channel
+   * @param {number} senderId
+   * @param {number} recepientId
+   * @param {Object} msg
+   */
   onMessage (channel, senderId, recepientId, msg) {
     let wc = channel.webChannel
     let item = super.getItem(wc, senderId)
@@ -1519,16 +616,13 @@ class WebRTCService extends ServiceInterface {
       item.pc = this.createPeerConnection(candidate => {
         wc.sendInnerTo(senderId, this.id, {candidate})
       })
-      Promise.all([
-        this.createDataChannel(item.pc, false)
-          .then(channel => {
-            let channelBuilderService = provide(CHANNEL_BUILDER)
-            channelBuilderService.onChannel(wc, channel, true, senderId)
-            this.removeItem(wc, senderId)
-          }),
-        this.createAnswer(item.pc, msg.offer, item.candidates)
-          .then(answer => wc.sendInnerTo(senderId, this.id, {answer}))
-      ]).catch(err => console.error(`Establish data channel (webChannel): ${err.message}`))
+      this.listenOnDataChannel(item.pc, dataCh => {
+        setTimeout(() => super.removeItem(wc, senderId), REMOVE_ITEM_TIMEOUT)
+        ServiceFactory.get(CHANNEL_BUILDER).onChannel(wc, dataCh, senderId)
+      })
+      this.createAnswer(item.pc, msg.offer, item.candidates)
+        .then(answer => wc.sendInnerTo(senderId, this.id, {answer}))
+        .catch(err => console.error(`During Establishing dataChannel connection over webChannel: ${err.message}`))
     } if ('answer' in msg) {
       item.pc.setRemoteDescription(msg.answer)
         .then(() => item.pc.addReceivedCandidates(item.candidates))
@@ -1538,6 +632,14 @@ class WebRTCService extends ServiceInterface {
     }
   }
 
+  /**
+   * Establishes an `RTCDataChannel` with a peer identified by `id` trough `WebChannel`.
+   *
+   * @param {WebChannel} wc
+   * @param {number} id
+   *
+   * @returns {Promise<RTCDataChannel, string>}
+   */
   connectOverWebChannel (wc, id) {
     let item = new CandidatesBuffer(this.createPeerConnection(candidate => {
       wc.sendInnerTo(id, this.id, {candidate})
@@ -1545,19 +647,22 @@ class WebRTCService extends ServiceInterface {
     super.setItem(wc, id, item)
     return new Promise((resolve, reject) => {
       setTimeout(reject, CONNECT_TIMEOUT, 'WebRTC connect timeout')
-      this.createDataChannel(item.pc, true)
-        .then(channel => {
-          this.removeItem(wc, id)
-          resolve(channel)
-        })
-        .catch(reject)
+      this.createDataChannel(item.pc, dataCh => {
+        setTimeout(() => super.removeItem(wc, id), REMOVE_ITEM_TIMEOUT)
+        resolve(dataCh)
+      })
       this.createOffer(item.pc)
         .then(offer => wc.sendInnerTo(id, this.id, {offer}))
         .catch(reject)
     })
   }
 
-  // Equivalent à open
+  /**
+   *
+   * @param {WebSocket} ws
+   * @param {function(channel: RTCDataChannel)} onChannel
+   *
+   */
   listenFromSignaling (ws, onChannel) {
     ws.onmessage = evt => {
       let msg = JSON.parse(evt.data)
@@ -1570,18 +675,17 @@ class WebRTCService extends ServiceInterface {
           super.setItem(ws, msg.id, item)
         }
         if ('offer' in msg.data) {
-          Promise.all([
-            this.createDataChannel(item.pc, false).then(channel => {
-              super.removeItem(ws, msg.id)
-              onChannel(channel)
-            }),
-            this.createAnswer(item.pc, msg.data.offer, item.candidates)
-              .then(answer => {
-                ws.send(JSON.stringify({id: msg.id, data: {answer}}))
-              })
-          ]).catch(err => {
-            console.error(`Establish data channel through signaling: ${err.message}`)
+          this.listenOnDataChannel(item.pc, dataCh => {
+            setTimeout(() => super.removeItem(ws, msg.id), REMOVE_ITEM_TIMEOUT)
+            onChannel(dataCh)
           })
+          this.createAnswer(item.pc, msg.data.offer, item.candidates)
+            .then(answer => {
+              ws.send(JSON.stringify({id: msg.id, data: {answer}}))
+            })
+            .catch(err => {
+              console.error(`During establishing data channel connection through signaling: ${err.message}`)
+            })
         } else if ('candidate' in msg.data) {
           this.addIceCandidate(item, msg.data.candidate)
         }
@@ -1589,74 +693,74 @@ class WebRTCService extends ServiceInterface {
     }
   }
 
-  connectOverSignaling (ws, key, options = {}) {
+  /**
+   *
+   * @param {type} ws
+   * @param {type} key Description
+   *
+   * @returns {type} Description
+   */
+  connectOverSignaling (ws, key) {
     let item = new CandidatesBuffer(this.createPeerConnection(candidate => {
       if (ws.readyState === 1) ws.send(JSON.stringify({data: {candidate}}))
     }))
     super.setItem(ws, key, item)
-    return Promise.race([
-      new Promise((resolve, reject) => {
-        ws.onclose = closeEvt => reject(closeEvt.reason)
-        ws.onmessage = evt => {
-          let msg
-          try {
-            msg = JSON.parse(evt.data)
-          } catch (err) {
-            console.error(`Unsupported message type from the signaling server: ${evt.data}`)
-          }
-
+    return new Promise((resolve, reject) => {
+      ws.onclose = closeEvt => reject(closeEvt.reason)
+      ws.onmessage = evt => {
+        try {
+          let msg = JSON.parse(evt.data)
           if ('data' in msg) {
             if ('answer' in msg.data) {
               item.pc.setRemoteDescription(msg.data.answer)
                 .then(() => item.pc.addReceivedCandidates(item.candidates))
-                .catch(err => {
-                  console.error(`Set answer (signaling): ${err.message}`)
-                  reject(err)
-                })
+                .catch(err => reject(`Set answer (signaling): ${err.message}`))
             } else if ('candidate' in msg.data) {
               this.addIceCandidate(super.getItem(ws, key), msg.data.candidate)
             }
-          } else if ('isKeyOk' in msg) {
-            if (msg.isKeyOk) {
-              this.createOffer(item.pc)
-                .then(offer => ws.send(JSON.stringify({data: {offer}})))
-                .catch(reject)
-            } else reject('Provided key is not available')
-          } else reject(`Unknown message from the signaling server: ${evt.data}`)
+          }
+        } catch (err) {
+          reject(`Unknown message from the server ${ws.url}: ${evt.data}`)
         }
-        ws.send(JSON.stringify({join: key}))
-      }),
-      this.createDataChannel(item.pc, true)
-        .then((channel) => {
-          super.removeItem(ws, key)
-          return channel
-        })
-    ])
+      }
+
+      this.createDataChannel(item.pc, dataCh => {
+        setTimeout(() => super.removeItem(ws, key), REMOVE_ITEM_TIMEOUT)
+        resolve(dataCh)
+      })
+      this.createOffer(item.pc)
+        .then(offer => ws.send(JSON.stringify({data: {offer}})))
+        .catch(reject)
+    })
   }
 
   /**
-   * Creates a peer connection and generates an SDP offer.
+   * Creates an SDP offer.
    *
-   * @param  {WebRTCService~onCandidate} onCandidate - Ice candidate event handler.
-   * @param  {WebRTCService~onSDP} sendOffer - Session description event handler.
-   * @param  {WebRTCService~onChannel} onChannel - Handler event when the data channel is ready.
-   * @return {Promise} - Resolved when the offer has been succesfully created,
+   * @private
+   * @param  {RTCPeerConnection} pc
+   * @return {Promise<RTCSessionDescription, string>} - Resolved when the offer has been succesfully created,
    * set as local description and sent to the peer.
    */
   createOffer (pc) {
     return pc.createOffer()
       .then(offer => pc.setLocalDescription(offer))
-      .then(() => JSON.parse(JSON.stringify(pc.localDescription)))
+      .then(() => {
+        return {
+          type: pc.localDescription.type,
+          sdp: pc.localDescription.sdp
+        }
+      })
   }
 
   /**
-   * Creates a peer connection and generates an SDP answer.
+   * Creates an SDP answer.
    *
-   * @param  {WebRTCService~onCandidate} onCandidate - Ice candidate event handler.
-   * @param  {WebRTCService~onSDP} sendOffer - Session description event handler.
-   * @param  {WebRTCService~onChannel} onChannel - Handler event when the data channel is ready.
-   * @param  {Object} offer - Offer received from a peer.
-   * @return {Promise} - Resolved when the offer has been succesfully created,
+   * @private
+   * @param  {RTCPeerConnection} pc
+   * @param  {string} offer
+   * @param  {Array[string]} candidates
+   * @return {Promise<RTCSessionDescription, string>} - Resolved when the offer has been succesfully created,
    * set as local description and sent to the peer.
    */
   createAnswer (pc, offer, candidates) {
@@ -1666,19 +770,24 @@ class WebRTCService extends ServiceInterface {
         return pc.createAnswer()
       })
       .then(answer => pc.setLocalDescription(answer))
-      .then(() => JSON.parse(JSON.stringify(pc.localDescription)))
+      .then(() => {
+        return {
+          type: pc.localDescription.type,
+          sdp: pc.localDescription.sdp
+        }
+      })
   }
 
   /**
    * Creates an instance of `RTCPeerConnection` and sets `onicecandidate` event handler.
    *
    * @private
-   * @param  {WebRTCService~onCandidate} onCandidate - Ice
+   * @param  {function(candidate: Object)} onCandidate
    * candidate event handler.
-   * @return {external:RTCPeerConnection} - Peer connection.
+   * @return {RTCPeerConnection}
    */
   createPeerConnection (onCandidate) {
-    let pc = new RTCPeerConnection$1({iceServers: this.settings.iceServers})
+    let pc = new RTCPeerConnection$1({iceServers: this.iceServers})
     pc.isRemoteDescriptionSet = false
     pc.addReceivedCandidates = candidates => {
       pc.isRemoteDescriptionSet = true
@@ -1697,34 +806,66 @@ class WebRTCService extends ServiceInterface {
     return pc
   }
 
-  createDataChannel (pc, isInitiator) {
-    return new Promise((resolve, reject) => {
-      let dc
-      if (isInitiator) {
-        dc = pc.createDataChannel(null)
-        dc.onopen = evt => resolve(dc)
-      } else {
-        pc.ondatachannel = dcEvt => {
-          dc = dcEvt.channel
-          dcEvt.channel.onopen = evt => resolve(dc)
-        }
-      }
-      pc.oniceconnectionstatechange = () => {
-        if (pc.iceConnectionState === 'disconnected') {
-          if (dc.onclose) dc.onclose(new CloseEvent(pc.iceConnectionState))
-        }
-      }
-    })
+  /**
+   *
+   * @private
+   * @param {RTCPeerConnection} pc
+   * @param {function(dc: RTCDataChannel)} onOpen
+   *
+   */
+  createDataChannel (pc, onOpen) {
+    let dc = pc.createDataChannel(null)
+    dc.onopen = evt => onOpen(dc)
+    this.setUpOnDisconnect(pc, dc)
   }
 
+  /**
+   *
+   * @private
+   * @param {RTCPeerConnection} pc
+   * @param {function(dc: RTCDataChannel)} onOpen
+   *
+   */
+  listenOnDataChannel (pc, onOpen) {
+    pc.ondatachannel = dcEvt => {
+      this.setUpOnDisconnect(pc, dcEvt.channel)
+      dcEvt.channel.onopen = evt => onOpen(dcEvt.channel)
+    }
+  }
+
+  /**
+   * @private
+   * @param {RTCPeerConnection} pc
+   * @param {RTCDataChannel} dataCh
+   *
+   * @returns {type} Description
+   */
+  setUpOnDisconnect (pc, dataCh) {
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'disconnected') {
+        if (dataCh.onclose) dataCh.onclose(Util.createCloseEvent(4201, 'disconnected', false))
+      }
+    }
+  }
+
+  /**
+   * @private
+   * @param {CandidatesBuffer|null} obj
+   * @param {string} candidate
+   *
+   * @returns {type} Description
+   */
   addIceCandidate (obj, candidate) {
-    if (obj.pc && obj.pc.isRemoteDescriptionSet) {
+    if (obj !== null && obj.pc && obj.pc.isRemoteDescriptionSet) {
       obj.pc.addIceCandidate(new RTCIceCandidate$1(candidate))
         .catch(evt => console.error(`Add ICE candidate: ${evt.message}`))
     } else obj.candidates[obj.candidates.length] = candidate
   }
 }
 
+/**
+ * @private
+ */
 class CandidatesBuffer {
   constructor (pc = null, candidates = []) {
     this.pc = pc
@@ -1732,20 +873,26 @@ class CandidatesBuffer {
   }
 }
 
-const WebSocket = isBrowser() ? window.WebSocket : require('ws')
-const CONNECT_TIMEOUT$1 = 20000
+const WebSocket = Util.isBrowser() ? window.WebSocket : require('ws')
+const CONNECT_TIMEOUT$1 = 10000
+/**
+ * One of the web socket state constant.
+ * @ignore
+ * @type {number}
+ */
 const OPEN = WebSocket.OPEN
-let listenOnWebSocket = false
-let setListenOnWebSocket = (value) => {
-  listenOnWebSocket = value
-}
 
-class WebSocketService extends ServiceInterface {
+/**
+ * Service class responsible to establish connections between peers via
+ * `WebSocket`.
+ */
+class WebSocketService extends Service {
 
   /**
    * Creates WebSocket with server.
+   *
    * @param {string} url - Server url
-   * @return {Promise} It is resolved once the WebSocket has been created and rejected otherwise
+   * @returns {Promise<WebSocket, string>} It is resolved once the WebSocket has been created and rejected otherwise
    */
   connect (url) {
     return new Promise((resolve, reject) => {
@@ -1765,19 +912,1112 @@ class WebSocketService extends ServiceInterface {
 }
 
 /**
- * Message builder module is responsible to build messages to send them over the
- * *WebChannel* and treat messages received by the *WebChannel*. It also manage
- * big messages (more then 16ko) sent by users. Internal messages are always less
- * 16ko.
- *
- * @module messageBuilder
+ * It is responsible to build a channel between two peers with a help of `WebSocketService` and `WebRTCService`.
+ * Its algorithm determine which channel (socket or dataChannel) should be created
+ * based on the services availability and peers' preferences.
  */
-let src$1 = isBrowser() ? window : require('text-encoding')
+class ChannelBuilderService extends Service {
+
+  /**
+   * @param {number} id Service identifier
+   */
+  constructor (id) {
+    super(id)
+    /**
+     * @private
+     */
+    this.WS = [WEB_SOCKET]
+    /**
+     * @private
+     */
+    this.WR = [WEB_RTC]
+    /**
+     * @private
+     */
+    this.WS_WR = [WEB_SOCKET, WEB_RTC]
+    /**
+     * @private
+     */
+    this.WR_WS = [WEB_RTC, WEB_SOCKET]
+  }
+
+  /**
+   * Establish a channel with the peer identified by `id`.
+   *
+   * @param {WebChannel} wc
+   * @param {number} id
+   *
+   * @returns {Promise<Channel, string>}
+   */
+  connectTo (wc, id) {
+    return new Promise((resolve, reject) => {
+      super.setPendingRequest(wc, id, {resolve, reject})
+      wc.sendInnerTo(id, this.id, this.availableConnectors(wc))
+    })
+  }
+
+  /**
+   * @param {WebChannel} wc
+   *
+   * @returns {{listenOn: string, connectors: number[]}}
+   */
+  availableConnectors (wc) {
+    let res = {}
+    let connectors = []
+    if (webRTCAvailable) connectors[connectors.length] = WEB_RTC
+    if (wc.settings.listenOn !== '') {
+      connectors[connectors.length] = WEB_SOCKET
+      res.listenOn = wc.settings.listenOn
+    }
+    if (connectors.length === 2 && connectors[0] !== wc.settings.connector) {
+      connectors.reverse()
+    }
+    res.connectors = connectors
+    return res
+  }
+
+  /**
+   * @param {WebChannel} wc
+   * @param {WebSocket|RTCDataChannel} channel
+   * @param {number} senderId
+   */
+  onChannel (wc, channel, senderId) {
+    wc.initChannel(channel, senderId)
+      .then(channel => {
+        let pendReq = super.getPendingRequest(wc, senderId)
+        if (pendReq !== null) pendReq.resolve(channel)
+      })
+  }
+
+  /**
+   * @param {Channel} channel
+   * @param {number} senderId
+   * @param {number} recepientId
+   * @param {Object} msg
+   */
+  onMessage (channel, senderId, recepientId, msg) {
+    let wc = channel.webChannel
+    let myConnectObj = this.availableConnectors(wc)
+    let myConnectors = myConnectObj.connectors
+
+    if ('failedReason' in msg) {
+      super.getPendingRequest(wc, senderId).reject(msg.failedReason)
+    } else if ('shouldConnect' in msg) {
+      if (this.isEqual(msg.shouldConnect, this.WS)) {
+        ServiceFactory.get(WEB_SOCKET).connect(msg.listenOn)
+          .then(channel => {
+            channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+            this.onChannel(wc, channel, senderId)
+          })
+          .catch(reason => {
+            super.getPendingRequest(wc, senderId).reject(`Failed to establish a socket: ${reason}`)
+          })
+      } else if (this.isEqual(msg.shouldConnect, this.WS_WR)) {
+        ServiceFactory.get(WEB_SOCKET).connect(msg.listenOn)
+          .then(channel => {
+            channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+            this.onChannel(wc, channel, senderId)
+          })
+          .catch(reason => ServiceFactory.get(WEB_RTC, wc.settings.iceServers).connectOverWebChannel(wc, senderId))
+          .then(channel => this.onChannel(wc, channel, senderId))
+          .catch(reason => {
+            if ('feedbackOnFail' in msg && msg.feedbackOnFail === true) {
+              wc.sendInnerTo(senderId, this.id, {tryOn: this.WS, listenOn: myConnectObj.listenOn})
+            } else {
+              super.getPendingRequest(wc, senderId).reject(`Failed to establish a socket and then a data channel: ${reason}`)
+            }
+          })
+      }
+    } else if ('tryOn' in msg && this.isEqual(msg.tryOn, this.WS)) {
+      ServiceFactory.get(WEB_SOCKET).connect(msg.listenOn)
+        .then(channel => {
+          channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+          this.onChannel(wc, channel, senderId)
+        })
+        .catch(reason => wc.sendInnerTo(senderId, this.id, {failedReason: `Failed to establish a socket: ${reason}`}))
+    } else if ('connectors' in msg) {
+      if (!this.isValid(msg.connectors)) {
+        wc.sendInnerTo(senderId, this.id, {failedReason: `Unknown connectors: ${msg.connectors}`})
+      } else {
+        // []
+        if (msg.connectors.length === 0) {
+          if (myConnectors.length === 0 || this.isEqual(myConnectors, this.WS)) {
+            wc.sendInnerTo(senderId, this.id, {failedReason: 'No common connectors'})
+          } else {
+            wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS, listenOn: myConnectObj.listenOn})
+          }
+        }
+
+        // [ws]
+        if (this.isEqual(msg.connectors, this.WS)) {
+          if (myConnectors.length === 0 || this.isEqual(myConnectors, this.WS)) {
+            this.ws(wc, senderId, msg.listenOn)
+          } else {
+            this.wsWs(wc, senderId, msg.listenOn, myConnectObj.listenOn)
+          }
+        }
+
+        // [wr]
+        if (this.isEqual(msg.connectors, this.WR)) {
+          if (myConnectors.length === 0) {
+            wc.sendInnerTo(senderId, this.id, {failedReason: 'No common connectors'})
+          } else if (this.isEqual(myConnectors, this.WS)) {
+            wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS, listenOn: myConnectObj.listenOn})
+          } else if (this.isEqual(myConnectors, this.WR)) {
+            ServiceFactory.get(WEB_RTC, wc.settings.iceServers).connectOverWebChannel(wc, senderId)
+              .then(channel => this.onChannel(wc, channel, senderId))
+              .catch(reason => {
+                wc.sendInnerTo(senderId, this.id, {failedReason: `Failed establish a data channel: ${reason}`})
+              })
+          } else if (this.isEqual(myConnectors, this.WS_WR)) {
+            wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS_WR, listenOn: myConnectObj.listenOn})
+          } else if (this.isEqual(myConnectors, this.WR_WS)) {
+            ServiceFactory.get(WEB_RTC, wc.settings.iceServers).connectOverWebChannel(wc, senderId)
+              .then(channel => this.onChannel(wc, channel, senderId))
+              .catch(reason => {
+                wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS, listenOn: myConnectObj.listenOn})
+              })
+          }
+        }
+
+        // [ws, wr]
+        if (this.isEqual(msg.connectors, this.WS_WR)) {
+          if (myConnectors.length === 0) {
+            this.ws(wc, senderId, msg.listenOn)
+          } else if (this.isEqual(myConnectors, this.WS)) {
+            this.wsWs(wc, senderId, msg.listenOn, myConnectObj.listenOn)
+          } else if (this.isEqual(myConnectors, this.WR)) {
+            ServiceFactory.get(WEB_SOCKET).connect(msg.listenOn)
+              .then(channel => {
+                channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+                this.onChannel(wc, channel, senderId)
+              })
+              .catch(reason => ServiceFactory.get(WEB_RTC, wc.settings.iceServers).connectOverWebChannel(wc, senderId))
+              .then(channel => this.onChannel(wc, channel, senderId))
+              .catch(reason => wc.sendInnerTo(senderId, this.id, {failedReason: `Failed to establish a socket and then a data channel: ${reason}`}))
+          } else if (this.isEqual(myConnectors, this.WS_WR)) {
+            ServiceFactory.get(WEB_SOCKET).connect(msg.listenOn)
+              .then(channel => {
+                channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+                this.onChannel(wc, channel, senderId)
+              })
+          } else if (this.isEqual(myConnectors, this.WR_WS)) {
+            wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS_WR, listenOn: myConnectObj.listenOn})
+          } else {
+            ServiceFactory.get(WEB_SOCKET).connect(msg.listenOn)
+              .then(channel => {
+                channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+                this.onChannel(wc, channel, senderId)
+              })
+              .catch(reason => ServiceFactory.get(WEB_RTC, wc.settings.iceServers).connectOverWebChannel(wc, senderId))
+              .then(channel => this.onChannel(wc, channel, senderId))
+              .catch(reason => wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS, listenOn: myConnectObj.listenOn}))
+          }
+        }
+
+        // [wr, ws]
+        if (this.isEqual(msg.connectors, this.WR_WS)) {
+          if (myConnectors.length === 0) {
+            this.ws(wc, senderId, msg.listenOn)
+          } else if (this.isEqual(myConnectors, this.WS)) {
+            this.wsWs(wc, senderId, msg.listenOn, myConnectObj.listenOn)
+          } else if (this.isEqual(myConnectors, this.WR)) {
+            ServiceFactory.get(WEB_RTC, wc.settings.iceServers)
+              .connectOverWebChannel(wc, senderId)
+              .then(channel => this.onChannel(wc, channel, senderId))
+              .catch(reason => ServiceFactory.get(WEB_SOCKET).connect(msg.listenOn))
+              .then(channel => {
+                channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+                this.onChannel(wc, channel, senderId)
+              })
+              .catch(reason => wc.sendInnerTo(senderId, this.id, {failedReason: `Failed to establish a data channel and then a socket: ${reason}`}))
+          } else if (this.isEqual(myConnectors, this.WS_WR)) {
+            wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS_WR, feedbackOnFail: true, listenOn: myConnectObj.listenOn})
+          } else if (this.isEqual(myConnectors, this.WR_WS)) {
+            ServiceFactory.get(WEB_RTC, wc.settings.iceServers)
+              .connectOverWebChannel(wc, senderId)
+              .then(channel => this.onChannel(wc, channel, senderId))
+              .catch(reason => ServiceFactory.get(WEB_SOCKET).connect(msg.listenOn))
+              .then(channel => {
+                channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+                this.onChannel(wc, channel, senderId)
+              })
+              .catch(reason => wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS, listenOn: myConnectObj.listenOn}))
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * @private
+   * @param {WebChannel} wc
+   * @param {number} senderId
+   * @param {string} peerWsURL
+   * @param {string} myWsURL
+   */
+  wsWs (wc, senderId, peerWsURL, myWsURL) {
+    ServiceFactory.get(WEB_SOCKET).connect(peerWsURL)
+      .then(channel => {
+        channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+        this.onChannel(wc, channel, senderId)
+      })
+      .catch(reason => {
+        wc.sendInnerTo(senderId, this.id, {shouldConnect: this.WS, listenOn: myWsURL})
+      })
+  }
+
+  /**
+   * @private
+   * @param {WebChannel} wc
+   * @param {number} senderId
+   * @param {string} peerWsURL
+   */
+  ws (wc, senderId, peerWsURL) {
+    ServiceFactory.get(WEB_SOCKET).connect(peerWsURL)
+      .then(channel => {
+        channel.send(JSON.stringify({wcId: wc.id, senderId: wc.myId}))
+        this.onChannel(wc, channel, senderId)
+      })
+      .catch(reason => {
+        wc.sendInnerTo(senderId, this.id, {
+          failedReason: `Failed to establish a socket: ${reason}`
+        })
+      })
+  }
+
+  /**
+   * @private
+   * @param {number[]} connectors
+   *
+   * @returns {boolean}
+   */
+  isValid (connectors) {
+    if (this.isEqual(connectors, this.WS) ||
+      this.isEqual(connectors, this.WR) ||
+      this.isEqual(connectors, this.WS_WR) ||
+      this.isEqual(connectors, this.WR_WS)
+    ) return true
+    return false
+  }
+
+  /**
+   * @private
+   * @param {number[]} arr1
+   * @param {number[]} arr2
+   *
+   * @returns {type} Description
+   */
+  isEqual (arr1, arr2) {
+    if (arr1.length !== arr2.length) return false
+    for (let i = 0; i < arr1.length; i++) {
+      if (arr1[i] !== arr2[i]) return false
+    }
+    return true
+  }
+
+}
+
+/**
+ * Wrapper class for `RTCDataChannel` and `WebSocket`.
+ */
+class Channel {
+  /**
+   * Creates a channel from existing `RTCDataChannel` or `WebSocket`.
+   * @param {WebSocket|RTCDataChannel} channel Data channel or web socket
+   * @param {WebChannel} webChannel The `WebChannel` this channel will be part of
+   * @param {number} peerId Identifier of the peer who is at the other end of
+   * this channel
+   */
+  constructor (channel, webChannel, peerId) {
+    /**
+     * Data channel or web socket.
+     * @private
+     * @type {external:WebSocket|external:RTCDataChannel}
+     */
+    this.channel = channel
+
+    /**
+     * The `WebChannel` which this channel belongs to.
+     * @type {WebChannel}
+     */
+    this.webChannel = null
+
+    /**
+     * Identifier of the peer who is at the other end of this channel
+     * @type {WebChannel}
+     */
+    this.peerId = -1
+
+    /**
+     * Send message.
+     * @type {function(message: ArrayBuffer)}
+     */
+    this.send = null
+
+    if (Util.isBrowser()) {
+      channel.binaryType = 'arraybuffer'
+      this.send = this.sendBrowser
+    } else if (Util.isSocket(channel)) {
+      this.send = this.sendInNodeThroughSocket
+    } else {
+      channel.binaryType = 'arraybuffer'
+      this.send = this.sendInNodeThroughDataChannel
+    }
+  }
+
+  /**
+   * Send message over this channel. The message should be prepared beforhand by
+   * the {@link MessageBuilderService} (see{@link MessageBuilderService#msg},
+   * {@link MessageBuilderService#handleUserMessage}).
+   *
+   * @private
+   * @param {ArrayBuffer} data Message
+   */
+  sendBrowser (data) {
+    // if (this.channel.readyState !== 'closed' && new Int8Array(data).length !== 0) {
+    if (this.isOpen()) {
+      try {
+        this.channel.send(data)
+      } catch (err) {
+        console.error(`Channel send: ${err.message}`)
+      }
+    }
+  }
+
+  /**
+   * @private
+   * @param {ArrayBuffer} data
+   */
+  sendInNodeThroughSocket (data) {
+    if (this.isOpen()) {
+      try {
+        this.channel.send(data, {binary: true})
+      } catch (err) {
+        console.error(`Channel send: ${err.message}`)
+      }
+    }
+  }
+
+  /**
+   * @private
+   * @param {ArrayBuffer} data
+   */
+  sendInNodeThroughDataChannel (data) {
+    this.sendBrowser(data.slice(0))
+  }
+
+  /**
+   * @type {function(message: ArrayBuffer)}
+   */
+  set onMessage (handler) {
+    if (!Util.isBrowser() && Util.isSocket(this.channel)) {
+      this.channel.onmessage = msgEvt => {
+        let ab = new ArrayBuffer(msgEvt.data.length)
+        let view = new Uint8Array(ab)
+        for (let i = 0; i < msgEvt.data.length; i++) {
+          view[i] = msgEvt.data[i]
+        }
+        handler(ab)
+      }
+    } else this.channel.onmessage = msgEvt => handler(msgEvt.data)
+  }
+
+  /**
+   * @type {function(message: CloseEvent)}
+   */
+  set onClose (handler) {
+    this.channel.onclose = closeEvt => {
+      if (this.webChannel !== null && handler(closeEvt)) {
+        this.webChannel.members.splice(this.webChannel.members.indexOf(this.peerId), 1)
+        this.webChannel.onPeerLeave(this.peerId)
+      } else handler(closeEvt)
+    }
+  }
+
+  /**
+   * @type {function(message: Event)}
+   */
+  set onError (handler) {
+    this.channel.onerror = evt => handler(evt)
+  }
+
+  /**
+   */
+  clearHandlers () {
+    this.onMessage = () => {}
+    this.onClose = () => {}
+    this.onError = () => {}
+  }
+
+  /**
+   * @returns {boolean}
+   */
+  isOpen () {
+    let state = this.channel.readyState
+    return state === 1 || state === 'open'
+  }
+
+  /**
+   * Close the channel.
+   */
+  close () {
+    this.channel.close()
+  }
+}
+
+/**
+ * This class represents a door of the `WebChannel` for the current peer. If the door
+ * is open, then clients can join the `WebChannel` through this peer. There are as
+ * many doors as peers in the `WebChannel` and each of them can be closed or opened.
+ */
+class SignalingGate {
+
+  /**
+   * @param {WebChannel} wc
+   */
+  constructor (wc) {
+    /**
+     * @type {WebChannel}
+     */
+    this.webChannel = wc
+    /**
+     * Signaling server url.
+     * @private
+     * @type {string}
+     */
+    this.url = null
+    /**
+     * Key related to the `url`.
+     * @private
+     * @type {string}
+     */
+    this.key = null
+    /**
+     * Web socket with the signaling server.
+     * @private
+     * @type {external:WebSocket|external:ws/WebSocket}
+     */
+    this.ws = null
+  }
+
+  /**
+   * Open the gate.
+   *
+   * @param {string} url Signaling server url
+   * @param {function(ch: RTCDataChannel)} onChannel
+   * @param {string} key
+   * @returns {Promise<OpenData, string>}
+   */
+  open (url, onChannel, key = null) {
+    return new Promise((resolve, reject) => {
+      if (key === null) key = this.generateKey()
+      ServiceFactory.get(WEB_SOCKET).connect(url)
+        .then(ws => {
+          ws.onclose = closeEvt => {
+            this.key = null
+            this.ws = null
+            this.url = null
+            this.webChannel.onClose(closeEvt)
+            reject(closeEvt.reason)
+          }
+          ws.onerror = err => reject(err.message)
+          ws.onmessage = evt => {
+            try {
+              let msg = JSON.parse(evt.data)
+              if ('isKeyOk' in msg) {
+                if (msg.isKeyOk) {
+                  ServiceFactory.get(WEB_RTC, this.webChannel.settings.iceServers)
+                    .listenFromSignaling(ws, onChannel)
+                  this.ws = ws
+                  this.key = key
+                  this.url = url
+                  resolve({url, key})
+                } else reject(`${key} key already exists`)
+              } else reject(`Unknown message from ${url}: ${evt.data}`)
+            } catch (err) {
+              reject('Server responce is not a JSON string: ' + err.message)
+            }
+          }
+          ws.send(JSON.stringify({key}))
+        })
+        .catch(reject)
+    })
+  }
+
+  /**
+   * Check if the door is opened or closed.
+   *
+   * @returns {boolean} - Returns true if the door is opened and false if it is
+   * closed
+   */
+  isOpen () {
+    return this.ws !== null && this.ws.readyState === OPEN
+  }
+
+  /**
+   * Get open data.
+   *
+   * @returns {OpenData|null} Open data if the door is open and null otherwise
+   */
+  getOpenData () {
+    if (this.isOpen()) {
+      return {
+        url: this.url,
+        key: this.key
+      }
+    }
+    return null
+  }
+
+  /**
+   * Close the door if it is open and do nothing if it is closed already.
+   */
+  close () {
+    if (this.isOpen()) {
+      this.ws.close()
+    }
+  }
+
+  /**
+   * Generate random key which will be used to join the `WebChannel`.
+   *
+   * @private
+   * @returns {string} - Generated key
+   */
+  generateKey () {
+    const MIN_LENGTH = 5
+    const DELTA_LENGTH = 0
+    const MASK = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    let result = ''
+    const length = MIN_LENGTH + Math.round(Math.random() * DELTA_LENGTH)
+
+    for (let i = 0; i < length; i++) {
+      result += MASK[Math.round(Math.random() * (MASK.length - 1))]
+    }
+    return result
+  }
+}
+
+/**
+ * Maximum identifier number for {@link WebChannel#generateId} function.
+ * @type {number}
+ */
+const MAX_ID = 4294967295
+
+/**
+ * Timout for ping `WebChannel` in milliseconds.
+ * @type {number}
+ */
+const PING_TIMEOUT = 5000
+
+const ID_TIMEOUT = 10000
+
+/**
+ * One of the internal message type. It's a peer message.
+ * @ignore
+ * @type {number}
+ */
+const USER_DATA = 1
+
+/**
+ * One of the internal message type. This message should be threated by a
+ * specific service class.
+ * @type {number}
+ */
+const INNER_DATA = 2
+
+const INITIALIZATION = 3
+
+/**
+ * One of the internal message type. Ping message.
+ * @type {number}
+ */
+const PING = 4
+
+/**
+ * One of the internal message type. Pong message, response to the ping message.
+ * @type {number}
+ */
+const PONG = 5
+
+/**
+ * This class is an API starting point. It represents a group of collaborators
+ * also called peers. Each peer can send/receive broadcast as well as personal
+ * messages. Every peer in the `WebChannel` can invite another person to join
+ * the `WebChannel` and he also possess enough information to be able to add it
+ * preserving the current `WebChannel` structure (network topology).
+ */
+class WebChannel {
+
+  /**
+   * @param {WebChannelSettings} settings Web channel settings
+   */
+  constructor (settings) {
+    /**
+     * @private
+     * @type {WebChannelSettings}
+     */
+    this.settings = settings
+
+    /**
+     * Channels through which this peer is connected with other peers. This
+     * attribute depends on the `WebChannel` topology. E. g. in fully connected
+     * `WebChannel` you are connected to each other peer in the group, however
+     * in the star structure this attribute contains only the connection to
+     * the central peer.
+     * @private
+     * @type {external:Set}
+     */
+    this.channels = new Set()
+
+    /**
+     * This event handler is used to resolve *Promise* in {@link WebChannel#join}.
+     * @private
+     */
+    this.onJoin = () => {}
+
+    /**
+     * `WebChannel` topology.
+     * @private
+     * @type {Service}
+     */
+    this.manager = ServiceFactory.get(this.settings.topology)
+
+    /**
+     * Message builder service instance.
+     *
+     * @private
+     * @type {MessageBuilderService}
+     */
+    this.msgBld = ServiceFactory.get(MESSAGE_BUILDER)
+
+    /**
+     * An array of all peer ids except this.
+     * @type {number[]}
+     */
+    this.members = []
+
+    /**
+     * @private
+     * @type {Set<number>}
+     */
+    this.generatedIds = new Set()
+
+    /**
+     * @private
+     * @type {Date}
+     */
+    this.pingTime = 0
+
+    /**
+     * @private
+     * @type {number}
+     */
+    this.maxTime = 0
+
+    /**
+     * @private
+     * @type {function(delay: number)}
+     */
+    this.pingFinish = () => {}
+
+    /**
+     * @private
+     * @type {number}
+     */
+    this.pongNb = 0
+
+    /**
+     * The `WebChannel` gate.
+     * @private
+     * @type {SignalingGate}
+     */
+    this.gate = new SignalingGate(this)
+
+    /**
+     * Unique `WebChannel` identifier. Its value is the same for all `WebChannel` members.
+     * @type {number}
+     */
+    this.id = this.generateId()
+
+    /**
+     * Unique peer identifier of you in this `WebChannel`. After each `join` function call
+     * this id will change, because it is up to the `WebChannel` to assign it when
+     * you join.
+     * @type {number}
+     */
+    this.myId = this.generateId()
+
+    /**
+     * Is the event handler called when a new peer has  joined the `WebChannel`.
+     * @type {function(id: number)}
+     */
+    this.onPeerJoin = id => {}
+
+    /**
+     * Is the event handler called when a peer hes left the `WebChannel`.
+     * @type {function(id: number)}
+     */
+    this.onPeerLeave = id => {}
+
+    /**
+     * Is the event handler called when a message is available on the `WebChannel`.
+     * @type {function(id: number, msg: UserMessage, isBroadcast: boolean)}
+     */
+    this.onMessage = (id, msg, isBroadcast) => {}
+
+    /**
+     * Is the event handler called when the `WebChannel` has been closed.
+     * @type {function(closeEvt: CloseEvent)}
+     */
+    this.onClose = closeEvt => {}
+  }
+
+  /**
+   * Join the `WebChannel`.
+   *
+   * @param  {string|WebSocket} keyOrSocket The key provided by one of the `WebChannel` members or a socket
+   * @param  {string} [url=this.settings.signalingURL] Server URL
+   * @returns {Promise<, string>} It resolves once you became a `WebChannel` member.
+   */
+  join (keyOrSocket, url = this.settings.signalingURL) {
+    return new Promise((resolve, reject) => {
+      this.onJoin = resolve
+      if (keyOrSocket.constructor.name !== 'WebSocket') {
+        if (Util.isURL(url)) {
+          ServiceFactory.get(WEB_SOCKET).connect(url)
+            .then(ws => {
+              ws.onclose = closeEvt => reject(closeEvt.reason)
+              ws.onmessage = evt => {
+                try {
+                  let msg = JSON.parse(evt.data)
+                  if ('isKeyOk' in msg) {
+                    if (msg.isKeyOk) {
+                      if ('useThis' in msg && msg.useThis) {
+                        this.initChannel(ws).catch(reject)
+                      } else {
+                        ServiceFactory.get(WEB_RTC, this.settings.iceServers).connectOverSignaling(ws, keyOrSocket)
+                          .then(channel => {
+                            ws.onclose = null
+                            ws.close()
+                            return this.initChannel(channel)
+                          })
+                          .catch(reject)
+                      }
+                    } else reject(`The key "${keyOrSocket}" was not found`)
+                  } else reject(`Unknown message from the server ${url}: ${evt.data}`)
+                } catch (err) { reject(err.message) }
+              }
+              ws.send(JSON.stringify({join: keyOrSocket}))
+            })
+            .catch(reject)
+        } else reject(`${url} is not a valid URL`)
+      } else {
+        this.initChannel(keyOrSocket).catch(reject)
+      }
+    })
+  }
+
+  /**
+   * Invite a peer to join the `WebChannel`.
+   *
+   * @param {string|WebSocket} keyOrSocket
+   *
+   * @returns {Promise<, string>}
+   */
+  invite (keyOrSocket) {
+    if (typeof keyOrSocket === 'string' || keyOrSocket instanceof String) {
+      if (!Util.isURL(keyOrSocket)) {
+        return Promise.reject(`${keyOrSocket} is not a valid URL`)
+      }
+      return ServiceFactory.get(WEB_SOCKET).connect(keyOrSocket)
+        .then(ws => {
+          ws.send(JSON.stringify({wcId: this.id}))
+          return this.addChannel(ws)
+        })
+    } else if (keyOrSocket.constructor.name === 'WebSocket') {
+      return this.addChannel(keyOrSocket)
+    }
+  }
+
+  /**
+   * Enable other peers to join the `WebChannel` with your help as an
+   * intermediary peer.
+   * @param  {Object} [options] Any available connection service options
+   * @returns {Promise} It is resolved once the `WebChannel` is open. The
+   * callback function take a parameter of type {@link SignalingGate~AccessData}.
+   */
+  open (options) {
+    let defaultSettings = {
+      url: this.settings.signalingURL,
+      key: null
+    }
+    let settings = Object.assign({}, defaultSettings, options)
+    if (Util.isURL(settings.url)) {
+      return this.gate.open(settings.url, dataCh => this.addChannel(dataCh), settings.key)
+    } else {
+      return Promise.reject(`${settings.url} is not a valid URL`)
+    }
+  }
+
+  /**
+   * Prevent clients to join the `WebChannel` even if they possesses a key.
+   */
+  close () {
+    this.gate.close()
+  }
+
+  /**
+   * If the `WebChannel` is open, the clients can join it through you, otherwise
+   * it is not possible.
+   * @returns {boolean} True if the `WebChannel` is open, false otherwise
+   */
+  isOpen () {
+    return this.gate.isOpen()
+  }
+
+  /**
+   * Get the data which should be provided to all clients who must join
+   * the `WebChannel`. It is the same data which
+   * {@link WebChannel#open} callback function provides.
+   * @returns {OpenData|null} - Data to join the `WebChannel` or null is the `WebChannel` is closed
+   */
+  getOpenData () {
+    return this.gate.getOpenData()
+  }
+
+  /**
+   * Leave the `WebChannel`. No longer can receive and send messages to the group.
+   */
+  leave () {
+    if (this.channels.size !== 0) {
+      this.members = []
+      this.pingTime = 0
+      // this.gate.close()
+      this.manager.leave(this)
+    }
+  }
+
+  /**
+   * Send the message to all `WebChannel` members.
+   * @param  {UserMessage} data - Message
+   */
+  send (data) {
+    if (this.channels.size !== 0) {
+      this.msgBld.handleUserMessage(data, this.myId, null, dataChunk => {
+        this.manager.broadcast(this, dataChunk)
+      })
+    }
+  }
+
+  /**
+   * Send the message to a particular peer in the `WebChannel`.
+   * @param  {number} id - Id of the recipient peer
+   * @param  {UserMessage} data - Message
+   */
+  sendTo (id, data) {
+    if (this.channels.size !== 0) {
+      this.msgBld.handleUserMessage(data, this.myId, id, dataChunk => {
+        this.manager.sendTo(id, this, dataChunk)
+      }, false)
+    }
+  }
+
+  /**
+   * Get the ping of the `WebChannel`. It is an amount in milliseconds which
+   * corresponds to the longest ping to each `WebChannel` member.
+   * @returns {Promise}
+   */
+  ping () {
+    if (this.members.length !== 0 && this.pingTime === 0) {
+      return new Promise((resolve, reject) => {
+        if (this.pingTime === 0) {
+          this.pingTime = Date.now()
+          this.maxTime = 0
+          this.pongNb = 0
+          this.pingFinish = delay => resolve(delay)
+          this.manager.broadcast(this, this.msgBld.msg(PING, this.myId))
+          setTimeout(() => resolve(PING_TIMEOUT), PING_TIMEOUT)
+        }
+      })
+    } else return Promise.resolve(0)
+  }
+
+  /**
+   * @private
+   * @param {WebSocket|RTCDataChannel} channel
+   *
+   * @returns {Promise<, string>}
+   */
+  addChannel (channel) {
+    return this.initChannel(channel)
+      .then(channel => {
+        let msg = this.msgBld.msg(INITIALIZATION, this.myId, channel.peerId, {
+          manager: this.manager.id,
+          wcId: this.id
+        })
+        channel.send(msg)
+        return this.manager.add(channel)
+      })
+  }
+
+  /**
+   * @private
+   * @param {number} peerId
+   */
+  onPeerJoin$ (peerId) {
+    this.members[this.members.length] = peerId
+    this.onPeerJoin(peerId)
+  }
+
+  /**
+   * @private
+   * @param {number} peerId
+   */
+  onPeerLeave$ (peerId) {
+    this.members.splice(this.members.indexOf(peerId), 1)
+    this.onPeerLeave(peerId)
+  }
+
+  /**
+   * Send a message to a service of the same peer, joining peer or any peer in
+   * the `WebChannel`.
+   * @private
+   * @param  {string} serviceId - Service id
+   * @param  {string} recepient - Identifier of recepient peer id
+   * @param  {Object} [msg={}] - Message to send
+   */
+  sendInnerTo (recepient, serviceId, data, forward = false) {
+    if (forward) {
+      this.manager.sendInnerTo(recepient, this, data)
+    } else {
+      if (Number.isInteger(recepient)) {
+        let msg = this.msgBld.msg(INNER_DATA, this.myId, recepient, {serviceId, data})
+        this.manager.sendInnerTo(recepient, this, msg)
+      } else {
+        recepient.send(this.msgBld.msg(INNER_DATA, this.myId, recepient.peerId, {serviceId, data}))
+      }
+    }
+  }
+
+  /**
+   * @private
+   * @param {number} serviceId
+   * @param {Object} data
+   */
+  sendInner (serviceId, data) {
+    this.manager.sendInner(this, this.msgBld.msg(INNER_DATA, this.myId, null, {serviceId, data}))
+  }
+
+  /**
+   * Message event handler (`WebChannel` mediator). All messages arrive here first.
+   * @private
+   * @param {Channel} channel - The channel the message came from
+   * @param {external:ArrayBuffer} data - Message
+   */
+  onChannelMessage (channel, data) {
+    let header = this.msgBld.readHeader(data)
+    if (header.code === USER_DATA) {
+      this.msgBld.readUserMessage(this, header.senderId, data, (fullData, isBroadcast) => {
+        this.onMessage(header.senderId, fullData, isBroadcast)
+      })
+    } else {
+      let msg = this.msgBld.readInternalMessage(data)
+      switch (header.code) {
+        case INITIALIZATION:
+          this.settings.topology = msg.manager
+          this.manager = ServiceFactory.get(this.settings.topology)
+          this.myId = header.recepientId
+          this.id = msg.wcId
+          channel.peerId = header.senderId
+          break
+        case INNER_DATA:
+          if (header.recepientId === 0 || this.myId === header.recepientId) {
+            this.getService(msg.serviceId).onMessage(
+              channel,
+              header.senderId,
+              header.recepientId,
+              msg.data
+            )
+          } else this.sendInnerTo(header.recepientId, null, data, true)
+          break
+        case PING:
+          this.manager.sendTo(header.senderId, this, this.msgBld.msg(PONG, this.myId))
+          break
+        case PONG:
+          let now = Date.now()
+          this.pongNb++
+          this.maxTime = Math.max(this.maxTime, now - this.pingTime)
+          if (this.pongNb === this.members.length) {
+            this.pingFinish(this.maxTime)
+            this.pingTime = 0
+          }
+          break
+        default:
+          throw new Error(`Unknown message type code: "${header.code}"`)
+      }
+    }
+  }
+
+  /**
+   * Initialize channel. The *Channel* object is a facade for *WebSocket* and
+   * *RTCDataChannel*.
+   * @private
+   * @param {external:WebSocket|external:RTCDataChannel} ch - Channel to
+   * initialize
+   * @param {number} [id] - Assign an id to this channel. It would be generated
+   * if not provided
+   * @returns {Promise} - Resolved once the channel is initialized on both sides
+   */
+  initChannel (ch, id = -1) {
+    if (id === -1) id = this.generateId()
+    let channel = new Channel(ch)
+    channel.peerId = id
+    channel.webChannel = this
+    channel.onMessage = data => this.onChannelMessage(channel, data)
+    channel.onClose = closeEvt => this.manager.onChannelClose(closeEvt, channel)
+    channel.onError = evt => this.manager.onChannelError(evt, channel)
+    return Promise.resolve(channel)
+  }
+
+  /**
+   * @private
+   * @param {MESSAGE_BUILDER|WEB_RTC|WEB_SOCKET|FULLY_CONNECTED|CHANNEL_BUILDER} id
+   *
+   * @returns {Service}
+   */
+  getService (id) {
+    if (id === WEB_RTC) {
+      return ServiceFactory.get(WEB_RTC, this.settings.iceServers)
+    }
+    return ServiceFactory.get(id)
+  }
+
+  /**
+   * Generate random id for a `WebChannel` or a new peer.
+   * @private
+   * @returns {number} - Generated id
+   */
+  generateId () {
+    do {
+      let id = Math.ceil(Math.random() * MAX_ID)
+      if (id === this.myId) continue
+      if (this.members.includes(id)) continue
+      if (this.generatedIds.has(id)) continue
+      this.generatedIds.add(id)
+      setTimeout(() => this.generatedIds.delete(id), ID_TIMEOUT)
+      return id
+    } while (true)
+  }
+}
+
+let src$1 = Util.isBrowser() ? window : require('text-encoding')
 const TextEncoder = src$1.TextEncoder
 const TextDecoder = src$1.TextDecoder
 
 /**
- * Maximum size of the user message sent over *Channel*. Is meant without metadata.
+ * Maximum size of the user message sent over `Channel`. Is meant without metadata.
  * @type {number}
  */
 const MAX_USER_MSG_SIZE = 16365
@@ -1801,7 +2041,7 @@ const HEADER_OFFSET = 9
 const MAX_MSG_ID_SIZE = 65535
 
 /**
- * User allowed message type: {@link external:ArrayBuffer}
+ * User allowed message type: {@link ArrayBuffer}
  * @type {number}
  */
 const ARRAY_BUFFER_TYPE = 1
@@ -1866,55 +2106,40 @@ const FLOAT_32_ARRAY_TYPE = 10
  */
 const FLOAT_64_ARRAY_TYPE = 11
 
-const JOIN = 1
-const NEW_CHANNEL = 2
-
 /**
  * Buffer for big user messages.
  */
 const buffers = new WeakMap()
 
 /**
- * Message builder service class.
+ * Message builder service is responsible to build messages to send them over the
+ * `WebChannel` and treat messages received by the `WebChannel`. It also manage
+ * big messages (more then 16ko) sent by users. Internal messages are always less
+ * 16ko.
  */
-class MessageBuilderService extends ServiceInterface {
+class MessageBuilderService extends Service {
 
   /**
    * @callback MessageBuilderService~Send
-   * @param {external:ArrayBuffer} dataChunk - If the message is too big this
+   * @param {ArrayBuffer} dataChunk - If the message is too big this
    * action would be executed for each data chunk until send whole message
    */
 
-  /**
-   * @callback MessageBuilderService~Receive
-   * @param {external:ArrayBuffer|external:Uint8Array|external:String|
-   * external:Int8Array|external:Uint8ClampedArray|external:Int16Array|
-   * external:Uint16Array|external:Int32Array|external:Uint32Array|
-   * external:Float32Array|external:Float64Array|external:DataView} data - Message.
-   * Its type depends on what other
-   */
+   /**
+    * @private
+    * @typedef {ARRAY_BUFFER_TYPE|U_INT_8_ARRAY_TYPE|STRING_TYPE|INT_8_ARRAY_TYPE|U_INT_8_CLAMPED_ARRAY_TYPE|INT_16_ARRAY_TYPE|U_INT_16_ARRAY_TYPE|INT_32_ARRAY_TYPE|U_INT_32_ARRAY_TYPE|FLOAT_32_ARRAY_TYPE|FLOAT_64_ARRAY_TYPE} MessageTypeEnum
+    */
 
   /**
-   * Header of the metadata of the messages sent/received over the *WebChannel*.
-   * @typedef {Object} MessageBuilderService~Header
-   * @property {number} code - Message type code
-   * @property {number} senderId - Id of the sender peer
-   * @property {number} recipientId - Id of the recipient peer
-   */
-
-  /**
-   * Prepare user message to be sent over the *WebChannel*
-   * @param {external:ArrayBuffer|external:Uint8Array|external:String|
-   * external:Int8Array|external:Uint8ClampedArray|external:Int16Array|
-   * external:Uint16Array|external:Int32Array|external:Uint32Array|
-   * external:Float32Array|external:Float64Array|external:DataView} data -
-   * Message to be sent
-   * @param {number} senderId - Id of the peer who sends this message
-   * @param {number} recipientId - Id of the recipient peer
-   * @param {MessageBuilderService~Send} action - Send callback executed for each
+   * Prepare user message to be sent over the `WebChannel`.
+   *
+   * @param {UserMessage} data Message to be sent
+   * @param {number} senderId Id of the peer who sends this message
+   * @param {number} recipientId Id of the recipient peer
+   * @param {function(dataChunk: ArrayBuffer)} action Send callback executed for each
    * data chunk if the message is too big
-   * @param {boolean} isBroadcast - Equals to true if this message would be
-   * sent to all *WebChannel* members and false if only to one member
+   * @param {boolean} [isBroadcast=true] Equals to true if this message would be
+   * sent to all `WebChannel` members and false if only to one member
    */
   handleUserMessage (data, senderId, recipientId, action, isBroadcast = true) {
     let workingData = this.userDataToType(data)
@@ -1938,7 +2163,7 @@ class MessageBuilderService extends ServiceInterface {
           dataUint8Array.byteLength - MAX_USER_MSG_SIZE * chunkNb
         )
         let dataView = this.initHeader(
-          1,
+          USER_DATA,
           senderId,
           recipientId,
           USER_MSG_OFFSET + currentChunkMsgByteLength
@@ -1961,11 +2186,14 @@ class MessageBuilderService extends ServiceInterface {
   }
 
   /**
-   * Build a message which can be then sent trough the *Channel*.
-   * @param {number} code - One of the internal message type code (e.g. {@link
+   * Build a message which can be then sent trough the `Channel`.
+   *
+   * @param {number} code One of the internal message type code (e.g. {@link
    * USER_DATA})
-   * @param {Object} [data={}] - Message. Could be empty if the code is enough
-   * @returns {external:ArrayBuffer} - Built message
+   * @param {number} [senderId=null]
+   * @param {number} [recepientId=null]
+   * @param {Object} [data={}] Could be empty if the code is enough
+   * @returns {ArrayBuffer} - Built message
    */
   msg (code, senderId = null, recepientId = null, data = {}) {
     let msgEncoded = (new TextEncoder()).encode(JSON.stringify(data))
@@ -1979,11 +2207,10 @@ class MessageBuilderService extends ServiceInterface {
   /**
    * Read user message which was prepared by another peer with
    * {@link MessageBuilderService#handleUserMessage} and sent.
-   * @param {WebChannel} wc - WebChannel
-   * @param {number} senderId - Id of the peer who sent this message
-   * @param {external:ArrayBuffer} data - Message
-   * @param {MessageBuilderService~Receive} action - Callback when the message is
-   * ready
+   * @param {WebChannel} wc WebChannel
+   * @param {number} senderId Id of the peer who sent this message
+   * @param {ArrayBuffer} data Message
+   * @param {function(msg: UserMessage, isBroadcast: boolean)} action Callback when the message is ready
    */
   readUserMessage (wc, senderId, data, action) {
     let dataView = new DataView(data)
@@ -1996,7 +2223,7 @@ class MessageBuilderService extends ServiceInterface {
       let buffer = this.getBuffer(wc, senderId, msgId)
       if (buffer === undefined) {
         this.setBuffer(wc, senderId, msgId,
-          new Buffer(msgSize, data, chunk, (fullData) => {
+          new Buffer(msgSize, data, chunk, fullData => {
             action(this.extractUserData(fullData, dataType), isBroadcast)
           })
         )
@@ -2016,7 +2243,7 @@ class MessageBuilderService extends ServiceInterface {
 
   /**
    * Read internal Netflux message.
-   * @param {external:ArrayBuffer} data - Message
+   * @param {ArrayBuffer} data Message
    * @returns {Object}
    */
   readInternalMessage (data) {
@@ -2029,9 +2256,8 @@ class MessageBuilderService extends ServiceInterface {
   /**
    * Extract header from the message. Each user message has a header which is
    * a part of the message metadata.
-   * TODO: add header also to the internal messages.
-   * @param {external:ArrayBuffer} data - Whole message
-   * @returns {MessageBuilderService~Header}
+   * @param {ArrayBuffer} data Whole message
+   * @returns {MessageHeader}
    */
   readHeader (data) {
     let dataView = new DataView(data)
@@ -2043,13 +2269,13 @@ class MessageBuilderService extends ServiceInterface {
   }
 
   /**
-   * Create an *ArrayBuffer* and fill in the header.
+   * Create an `ArrayBuffer` and fill in the header.
    * @private
-   * @param {number} code - Message type code
-   * @param {number} senderId - Sender peer id
-   * @param {number} recipientId - Recipient peer id
-   * @param {number} dataSize - Message size in bytes
-   * @return {external:DataView} - Data view with initialized header
+   * @param {number} code Message type code
+   * @param {number} senderId Sender peer id
+   * @param {number} recipientId Recipient peer id
+   * @param {number} dataSize Message size in bytes
+   * @return {DataView} Data view with initialized header
    */
   initHeader (code, senderId, recipientId, dataSize) {
     let dataView = new DataView(new ArrayBuffer(dataSize))
@@ -2060,16 +2286,12 @@ class MessageBuilderService extends ServiceInterface {
   }
 
   /**
-   * Netflux sends data in *ArrayBuffer*, but the user can send data in different
+   * Netflux sends data in `ArrayBuffer`, but the user can send data in different
    * types. This function retrieve the inital message sent by the user.
    * @private
-   * @param {external:ArrayBuffer} - Message as it was received by the *WebChannel*
-   * @param {number} - Message type as it was defined by the user
-   * @returns {external:ArrayBuffer|external:Uint8Array|external:String|
-   * external:Int8Array|external:Uint8ClampedArray|external:Int16Array|
-   * external:Uint16Array|external:Int32Array|external:Uint32Array|
-   * external:Float32Array|external:Float64Array|external:DataView} - Initial
-   * user message
+   * @param {ArrayBuffer} Message as it was received by the `WebChannel`
+   * @param {MessageTypeEnum} type Message type as it was defined by the user
+   * @returns {ArrayBuffer|TypedArray} Initial user message
    */
   extractUserData (buffer, type) {
     switch (type) {
@@ -2100,12 +2322,10 @@ class MessageBuilderService extends ServiceInterface {
 
   /**
    * Identify the user message type.
+   *
    * @private
-   * @param {external:ArrayBuffer|external:Uint8Array|external:String|
-   * external:Int8Array|external:Uint8ClampedArray|external:Int16Array|
-   * external:Uint16Array|external:Int32Array|external:Uint32Array|
-   * external:Float32Array|external:Float64Array|external:DataView} - User message
-   * @returns {number} - User message type
+   * @param {UserMessage} User message
+   * @returns {MessageTypeEnum} User message type
    */
   userDataToType (data) {
     let result = {}
@@ -2146,11 +2366,10 @@ class MessageBuilderService extends ServiceInterface {
   /**
    * Get the buffer.
    * @private
-   * @param {WebChannel} wc - WebChannel
-   * @param {number} peerId - Peer id
-   * @param {number} msgId - Message id
-   * @returns {Buffer|undefined} - Returns buffer if it was found and undefined
-   * if not
+   * @param {WebChannel} wc WebChannel
+   * @param {number} peerId Peer id
+   * @param {number} msgId Message id
+   * @returns {Buffer|undefined} Returns buffer if it was found and undefined if not
    */
   getBuffer (wc, peerId, msgId) {
     let wcBuffer = buffers.get(wc)
@@ -2166,10 +2385,10 @@ class MessageBuilderService extends ServiceInterface {
   /**
    * Add a new buffer to the buffer array.
    * @private
-   * @param {WebChannel} wc - WebChannel
-   * @param {number} peerId - Peer id
-   * @param {number} msgId - Message id
-   * @param {Buffer} - buffer
+   * @param {WebChannel} wc WebChannel
+   * @param {number} peerId Peer id
+   * @param {number} msgId Message id
+   * @param {Buffer} buffer
    */
   setBuffer (wc, peerId, msgId, buffer) {
     let wcBuffer = buffers.get(wc)
@@ -2188,22 +2407,17 @@ class MessageBuilderService extends ServiceInterface {
 
 /**
  * Buffer class used when the user message exceeds the message size limit which
- * may be sent over a *Channel*. Each buffer is identified by *WebChannel* id,
+ * may be sent over a `Channel`. Each buffer is identified by `WebChannel` id,
  * peer id (who sends the big message) and message id (in case if the peer sends
  * more then 1 big message at a time).
+ * @private
  */
 class Buffer {
 
   /**
-   * @callback Buffer~onFullMessage
-   * @param {external:ArrayBuffer} - The full message as it was initially sent
-   * by user
-   */
-
-  /**
-   * @param {number} fullDataSize - The total user message size
-   * @param {external:ArrayBuffer} - The first chunk of the user message
-   * @param {Buffer~onFullMessage} action - Callback to be executed when all
+   * @param {number} fullDataSize The total user message size
+   * @param {ArrayBuffer} The first chunk of the user message
+   * @param {function(buffer: ArrayBuffer)} action Callback to be executed when all
    * message chunks are received and thus the message is ready
    */
   constructor (fullDataSize, data, chunkNb, action) {
@@ -2215,7 +2429,7 @@ class Buffer {
 
   /**
    * Add a chunk of message to the buffer.
-   * @param {external:ArrayBuffer} data - Message chunk
+   * @param {ArrayBuffer} data - Message chunk
    * @param {number} chunkNb - Number of the chunk
    */
   add (data, chunkNb) {
@@ -2232,998 +2446,286 @@ class Buffer {
   }
 }
 
-class ChannelBuilderService extends ServiceInterface {
-  connectTo (wc, id) {
-    return new Promise((resolve, reject) => {
-      this.setPendingRequest(wc, id, {resolve, reject})
-      let connectors = this.availableConnectors(wc)
-      wc.sendInnerTo(id, this.id, {
-        connectors,
-        sender: wc.myId,
-        botUrl: wc.settings.bot,
-        oneMsg: true
-      })
-    })
-  }
-
-  availableConnectors (wc) {
-    let connectors = []
-    if (webRTCAvailable) connectors[connectors.length] = WEBRTC
-    if (listenOnWebSocket) connectors[connectors.length] = WEBSOCKET
-    let forground = wc.settings.connector
-    if (connectors.length !== 1 && connectors[0] !== forground) {
-      let tmp = connectors[0]
-      connectors[0] = connectors[1]
-      connectors[1] = tmp
-    }
-    return connectors
-  }
-
-  onChannel (wc, channel, oneMsg, sender) {
-    wc.initChannel(channel, sender)
-      .then(channel => {
-        if (oneMsg) this.getPendingRequest(wc, sender).resolve(channel)
-      })
-  }
-
-  onMessage (channel, senderId, recepientId, msg) {
-    let wc = channel.webChannel
-    if (msg.connectors.includes(WEBSOCKET)) {
-      // A Bot server send the message
-      // Try to connect in WebSocket
-      provide(WEBSOCKET).connect(msg.botUrl)
-        .then(channel => {
-          let msgBld = provide(MESSAGE_BUILDER)
-          channel.send(msgBld.msg(JOIN, wc.myId, null, {
-            wcId: this.id,
-            oneMsg: msg.oneMsg
-          }))
-          this.onChannel(wc, channel, !msg.oneMsg, msg.sender)
-        })
-        .catch(() => {
-          provide(WEBRTC).connectOverWebChannel(wc, msg.sender)
-            .then(channel => {
-              this.onChannel(wc, channel, !msg.oneMsg, msg.sender)
-            })
-        })
-    } else {
-      let connectors = this.availableConnectors(wc)
-      if (connectors.includes(WEBSOCKET)) {
-        // The peer who send the message doesn't listen in WebSocket and i'm bot
-        wc.sendInnerTo(msg.sender, this.id, {
-          connectors,
-          sender: wc.myId,
-          botUrl: wc.settings.bot,
-          oneMsg: false
-        })
-      } else {
-        // The peer who send the message doesn't listen in WebSocket and doesn't listen too
-        provide(WEBRTC).connectOverWebChannel(wc, msg.sender)
-          .then(channel => this.onChannel(wc, channel, !msg.oneMsg, msg.sender))
-      }
-    }
-  }
-}
+/**
+ * {@link WebRTCService} identifier.
+ * @ignore
+ * @type {number}
+ */
+const WEB_RTC = 0
 
 /**
- * Service Provider module is a helper module for {@link module:service}. It is
- * responsible to instantiate all services. This module must be used to get
- * any service instance.
- * @module serviceProvider
- */
+* {@link WebSocketService} identifier.
+* @ignore
+* @type {number}
+*/
+const WEB_SOCKET = 1
 
 /**
- * Constant used to get an instance of {@link WebRTCService}.
- * @type {string}
+ * {@link ChannelBuilderService} identifier.
+ * @ignore
+ * @type {number}
  */
-const WEBRTC = 0
-
-/**
- * Constant used to get an instance of {@link WebSocketService}.
- * @type {string}
- */
-const WEBSOCKET = 1
-
 const CHANNEL_BUILDER = 2
 
 /**
- * Constant used to get an instance of {@link FullyConnectedService}.
- * @type {string}
+ * {@link FullyConnectedService} identifier.
+ * @ignore
+ * @type {number}
  */
 const FULLY_CONNECTED = 3
 
 /**
- * Constant used to get an instance of {@link MessageBuilderService}. It is a
- * singleton service.
- * @type {string}
+ * {@link MessageBuilderService} identifier
+ * @ignore
+ * @type {number}
  */
 const MESSAGE_BUILDER = 4
 
 /**
- * Contains services who are singletons.
- * @type {string}
+ * Contains singletons services.
+ * @type {Map}
  */
 const services = new Map()
 
 /**
- * Provides the service instance specified by `id`.
- *
- * @param  {(module:serviceProvider.MESSAGE_BUILDER|
- *          module:serviceProvider.WEBRTC|
-            module:serviceProvider.WEBSOCKET|
- *          module:serviceProvider.FULLY_CONNECTED)} id - The service id.
- * @param  {Object} [options] - Any options that the service accepts.
- * @return {module:service~ServiceInterface} - Service instance.
- * @throws An error if the service id is unknown
+ * It is a factory helper class which is responsible to instantiate any service class.
  */
-let provide = function (id, options = {}) {
-  if (services.has(id)) {
-    return services.get(id)
-  }
-  let service
-  switch (id) {
-    case WEBRTC:
-      return new WebRTCService(WEBRTC, options)
-    case WEBSOCKET:
-      return new WebSocketService(WEBSOCKET)
-    case CHANNEL_BUILDER:
-      return new ChannelBuilderService(CHANNEL_BUILDER)
-    case FULLY_CONNECTED:
-      service = new FullyConnectedService(FULLY_CONNECTED)
-      services.set(id, service)
-      return service
-    case MESSAGE_BUILDER:
-      service = new MessageBuilderService(MESSAGE_BUILDER)
-      services.set(id, service)
-      return service
-    default:
-      throw new Error(`Unknown service id: "${id}"`)
+class ServiceFactory {
+  /**
+   * Provides the service instance specified by `id`.
+   *
+   * @throws {Error} If the service `id` is unknown
+   * @param  {MESSAGE_BUILDER|WEB_RTC|WEB_SOCKET|FULLY_CONNECTED|CHANNEL_BUILDER} id The service identifier
+   * @param  {Object} [options] Any options that the service accepts
+   * @returns {Service}
+   */
+  static get (id, options = {}) {
+    if (services.has(id)) {
+      return services.get(id)
+    }
+    let service
+    switch (id) {
+      case WEB_RTC:
+        return new WebRTCService(WEB_RTC, options)
+      case WEB_SOCKET:
+        return new WebSocketService(WEB_SOCKET)
+      case CHANNEL_BUILDER:
+        return new ChannelBuilderService(CHANNEL_BUILDER)
+      case FULLY_CONNECTED:
+        service = new FullyConnectedService(FULLY_CONNECTED)
+        services.set(id, service)
+        return service
+      case MESSAGE_BUILDER:
+        service = new MessageBuilderService(MESSAGE_BUILDER)
+        services.set(id, service)
+        return service
+      default:
+        throw new Error(`${id} is an Unknown service id`)
+    }
   }
 }
 
-/**
- * Wrapper class for {@link external:RTCDataChannel} and
- * {@link external:WebSocket}.
- */
-class Channel {
-  /**
-   * Creates *Channel* instance from existing data channel or web socket, assigns
-   * it to the specified *WebChannel* and gives him an identifier.
-   * @param {external:WebSocket|external:RTCDataChannel} - Data channel or web
-   * socket
-   * @param {WebChannel} - The *WebChannel* this channel will be part of
-   * @param {number} peerId - Identifier of the peer who is at the other end of
-   * this channel
-   */
-  constructor (channel) {
-    /**
-     * Data channel or web socket.
-     * @private
-     * @type {external:WebSocket|external:RTCDataChannel}
-     */
-    this.channel = channel
-
-    /**
-     * The *WebChannel* which this channel belongs to.
-     * @type {WebChannel}
-     */
-    this.webChannel = null
-
-    /**
-     * Identifier of the peer who is at the other end of this channel
-     * @type {WebChannel}
-     */
-    this.peerId = -1
-
-    if (isBrowser()) {
-      channel.binaryType = 'arraybuffer'
-      this.send = this.sendBrowser
-    } else if (isSocket(channel)) {
-      this.send = this.sendInNodeThroughSocket
-    } else {
-      channel.binaryType = 'arraybuffer'
-      this.send = this.sendInNodeThroughDataChannel
-    }
-  }
-
-  /**
-   * Send message over this channel. The message should be prepared beforhand by
-   * the {@link MessageBuilderService}
-   * @see {@link MessageBuilderService#msg}, {@link MessageBuilderService#handleUserMessage}
-   * @param {external:ArrayBuffer} data - Message
-   */
-  sendBrowser (data) {
-    // if (this.channel.readyState !== 'closed' && new Int8Array(data).length !== 0) {
-    if (this.isOpen()) {
-      try {
-        this.channel.send(data)
-      } catch (err) {
-        console.error(`Channel send: ${err.message}`)
-      }
-    }
-  }
-
-  sendInNodeThroughSocket (data) {
-    if (this.isOpen()) {
-      try {
-        this.channel.send(data, {binary: true})
-      } catch (err) {
-        console.error(`Channel send: ${err.message}`)
-      }
-    }
-  }
-
-  sendInNodeThroughDataChannel (data) {
-    this.sendBrowser(data.slice(0))
-  }
-
-  set onMessage (handler) {
-    if (!isBrowser() && isSocket(this.channel)) {
-      this.channel.onmessage = msgEvt => {
-        let ab = new ArrayBuffer(msgEvt.data.length)
-        let view = new Uint8Array(ab)
-        for (let i = 0; i < msgEvt.data.length; i++) {
-          view[i] = msgEvt.data[i]
-        }
-        handler(ab)
-      }
-    } else this.channel.onmessage = msgEvt => handler(msgEvt.data)
-  }
-
-  set onClose (handler) {
-    this.channel.onclose = closeEvt => {
-      if (this.webChannel !== null && handler(closeEvt)) {
-        this.webChannel.members.splice(this.webChannel.members.indexOf(this.peerId), 1)
-        this.webChannel.onLeaving(this.peerId)
-      } else handler(closeEvt)
-    }
-  }
-
-  set onError (handler) {
-    this.channel.onerror = evt => handler(evt)
-  }
-
-  clearHandlers () {
-    this.onmessage = () => {}
-    this.onclose = () => {}
-    this.onerror = () => {}
-  }
-
-  isOpen () {
-    let state = this.channel.readyState
-    return state === 1 || state === 'open'
-  }
-
-  /**
-   * Close the channel.
-   */
-  close () {
-    this.channel.close()
-  }
-}
+const MESSAGE_TYPE_ERROR = 4000
+const MESSAGE_UNKNOWN_ATTRIBUTE = 4001
 
 /**
- * This class represents a door of the *WebChannel* for this peer. If the door
- * is open, then clients can join the *WebChannel* through this peer, otherwise
- * they cannot.
+ * BotServer can listen on web socket. A peer can invite bot to join his `WebChannel`.
+ * He can also join one of the bot's `WebChannel`.
  */
-class WebChannelGate {
+class BotServer {
 
   /**
-   * When the *WebChannel* is open, any clients should you this data to join
-   * the *WebChannel*.
-   * @typedef {Object} WebChannelGate~AccessData
-   * @property {string} key - The unique key to join the *WebChannel*
-   * @property {string} url - Signaling server url
-   */
-
-  /**
-   * @typedef {Object} WebChannelGate~AccessData
-   * @property {string} key - The unique key to join the *WebChannel*
-   * @property {string} url - Signaling server url
-   */
-
-  /**
-   * @param {WebChannelGate~onClose} onClose - close event handler
-   */
-  constructor (onClose = () => {}) {
-    /**
-     * Web socket which holds the connection with the signaling server.
-     * @private
-     * @type {external:WebSocket}
-     */
-    this.ws = null
-
-    /**
-     * // TODO: add doc
-     * @type {WebChannelGate~AccessData}
-     */
-    this.accessData = {}
-
-    /**
-     * Close event handler.
-     * @private
-     * @type {WebChannelGate~onClose}
-     */
-    this.onClose = onClose
-  }
-
-  /**
-   * Open the door.
-   * @param {external:WebSocket} socket - Web socket to signalign server
-   * @param {WebChannelGate~AccessData} accessData - Access data to join the
-   * *WebChannel
-   */
-  open (onChannel, options) {
-    let url = options.signaling
-
-    return new Promise((resolve, reject) => {
-      let webRTCService = provide(WEBRTC)
-      let webSocketService = provide(WEBSOCKET)
-      let key = 'key' in options ? options.key : this.generateKey()
-      webSocketService.connect(url)
-        .then(ws => {
-          ws.onclose = closeEvt => {
-            this.onClose(closeEvt)
-            reject(closeEvt.reason)
-          }
-          ws.onerror = err => {
-            console.log('ERROR: ', err)
-            reject(err.message)
-          }
-          ws.onmessage = evt => {
-            let msg
-            try {
-              msg = JSON.parse(evt.data)
-            } catch (err) {
-              reject('Server responce is not a JSON string: ' + err.message)
-            }
-            if ('isKeyOk' in msg) {
-              if (msg.isKeyOk) {
-                webRTCService.listenFromSignaling(ws, onChannel)
-
-                resolve(this.accessData)
-              } else {
-                reject(`The key: ${key} is not suitable`)
-              }
-            } else {
-              reject(`Unknown server message: ${evt.data}`)
-            }
-          }
-          this.ws = ws
-          this.accessData.key = key
-          this.accessData.url = url
-          ws.send(JSON.stringify({key}))
-        })
-        .catch(reject)
-    })
-  }
-
-  /**
-   * Check if the door is opened or closed.
-   * @returns {boolean} - Returns true if the door is opened and false if it is
-   * closed
-   */
-  isOpen () {
-    return this.ws !== null && this.ws.readyState === OPEN
-  }
-
-  /**
-   * Close the door if it is open and do nothing if it is closed already.
-   */
-  close () {
-    if (this.isOpen()) {
-      this.ws.close()
-      this.accessData = {}
-      this.ws = null
-    }
-  }
-
-  /**
-   * Generate random key which will be used to join the *WebChannel*.
-   * @private
-   * @returns {string} - Generated key
-   */
-  generateKey () {
-    const MIN_LENGTH = 5
-    const DELTA_LENGTH = 0
-    const MASK = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    let result = ''
-    const length = MIN_LENGTH + Math.round(Math.random() * DELTA_LENGTH)
-
-    for (let i = 0; i < length; i++) {
-      result += MASK[Math.round(Math.random() * (MASK.length - 1))]
-    }
-    return result
-  }
-}
-
-const msgBld = provide(MESSAGE_BUILDER)
-
-/**
- * Maximum identifier number for {@link WebChannel#generateId} function.
- * @type {number}
- */
-const MAX_ID = 4294967295
-
-/**
- * Timout for ping *WebChannel* in milliseconds.
- * @type {number}
- */
-const PING_TIMEOUT = 5000
-
-const ID_TIMEOUT = 10000
-
-/**
- * One of the internal message type. It's a peer message.
- * @type {number}
- */
-const USER_DATA = 1
-
-/**
- * One of the internal message type. This message should be threated by a
- * specific service class.
- * @type {number}
- */
-const INNER_DATA = 2
-
-const INITIALIZATION = 3
-
-/**
- * One of the internal message type. Ping message.
- * @type {number}
- */
-const PING = 4
-
-/**
- * One of the internal message type. Pong message, response to the ping message.
- * @type {number}
- */
-const PONG = 5
-
-/**
- * This class is an API starting point. It represents a group of collaborators
- * also called peers. Each peer can send/receive broadcast as well as personal
- * messages. Every peer in the *WebChannel* can invite another person to join
- * the *WebChannel* and he also possess enough information to be able to add it
- * preserving the current *WebChannel* structure (network topology).
- */
-class WebChannel {
-
-  /**
-   * When the *WebChannel* is open, any clients should you this data to join
-   * the *WebChannel*.
-   * @typedef {Object} WebChannel~AccessData
-   * @property {string} key - The unique key to join the *WebChannel*
-   * @property {string} url - Signaling server url
-   */
-
-  /**
-   * *WebChannel* constructor. *WebChannel* can be parameterized in terms of
-   * network topology and connector technology (WebRTC or WebSocket. Currently
-   * WebRTC is only available).
-   * @param  {Object} [options] *WebChannel* configuration
-   * @param  {string} [options.topology=FULLY_CONNECTED] Defines the network
-   *            topology
-   * @param  {string} [options.connector=WEBRTC] Prioritizes this connection
-   *            technology
-   * @returns {WebChannel} Empty *WebChannel* without any connection.
+   * Bot server settings are the same as for `WebChannel` (see {@link WebChannelSettings}),
+   * plus `host` and `port` parameters.
+   *
+   * @param {Object} options
+   * @param {WEB_RTC|WEB_SOCKET} [options.connector=WEB_SOCKET] Which connector is preferable during connection establishment
+   * @param {FULLY_CONNECTED} [options.topology=FULLY_CONNECTED] Fully connected topology is the only one available for now
+   * @param {string} [options.signalingURL='wss://sigver-coastteam.rhcloud.com:8443'] Signaling server url
+   * @param {RTCIceServer} [options.iceServers=[{urls:'stun:turn01.uswest.xirsys.com'}]] Set of ice servers for WebRTC
+   * @param {string} [options.host='localhost']
+   * @param {number} [options.port=9000]
    */
   constructor (options = {}) {
-    this.defaults = {
-      connector: WEBRTC,
+    /**
+     * Default settings.
+     * @private
+     * @type {Object}
+     */
+    this.defaultSettings = {
+      connector: WEB_SOCKET,
       topology: FULLY_CONNECTED,
-      signaling: 'wss://sigver-coastteam.rhcloud.com:8443',
-      bot: 'ws://localhost:9000'
+      signalingURL: 'wss://sigver-coastteam.rhcloud.com:8443',
+      iceServers: [
+        {urls: 'stun:turn01.uswest.xirsys.com'}
+      ],
+      host: 'localhost',
+      port: 9000
     }
-    this.settings = Object.assign({}, this.defaults, options)
-
-    /**
-     * Channels through which this peer is connected with other peers. This
-     * attribute depends on the *WebChannel* topology. E. g. in fully connected
-     * *WebChannel* you are connected to each other peer in the group, however
-     * in the star structure this attribute contains only the connection to
-     * the central peer.
-     * @private
-     * @type {external:Set}
-     */
-    this.channels = new Set()
-
-    /**
-     * This event handler is used to resolve *Promise* in {@link WebChannel#join}.
-     * @private
-     */
-     // TODO: add type to doc
-    this.onJoin
-
-    /**
-     * *WebChannel* topology.
-     * @private
-     * @type {string}
-     */
-    this.topology = this.settings.topology
-
-    /**
-     * An array of all peer ids except this.
-     * @private
-     * @type {Array}
-     */
-    this.members = []
-
-    this.generatedIds = new Set()
 
     /**
      * @private
-     * @type {number}
+     * @type {Object}
      */
-    this.pingTime = 0
+    this.settings = Object.assign({}, this.defaultSettings, options)
+    this.settings.listenOn = `ws://${this.settings.host}:${this.settings.port}`
 
     /**
-     * The *WebChannel* gate.
-     * @private
-     * @type {WebChannelGate}
+     * @type {WebSocketServer}
      */
-    this.gate = new WebChannelGate(closeEvt => this.onClose(closeEvt))
+    this.server = null
 
     /**
-     * Unique identifier of this *WebChannel*. The same for all peers.
-     * @readonly
+     * @type {WebChannel[]}
      */
-    this.id = this.generateId()
-
-    /**
-     * Unique peer identifier of you in this *WebChannel*. After each `join` function call
-     * this id will change, because it is up to the *WebChannel* to assign it when
-     * you join.
-     * @readonly
-     */
-    this.myId = this.generateId()
-
-    /**
-     * Is the event handler called when a new peer has  joined the *WebChannel*.
-     * @param {number} id - Id of the joined peer
-     */
-    this.onJoining = id => {}
-
-    /**
-     * Is the event handler called when a message is available on the *WebChannel*.
-     * @param {number} id - Id of the peer who sent this message
-     * @param {string|external:ArrayBufferView} data - Message
-     * @param {boolean} isBroadcast - It is true if the message is sent via
-     * [send]{@link WebChannel#send} method and false if it is sent via
-     * [sendTo]{@link WebChannel#sendTo} method
-     */
-    this.onMessage = (id, msg, isBroadcast) => {}
-
-    /**
-     * Is the event handler called when a peer hes left the *WebChannel*.
-     * @param {number} id - Id of the peer who has left
-     */
-    this.onLeaving = id => {}
-
-    /**
-     * Is the event handler called when the *WebChannel* has been closed.
-     * @param {external:CloseEvent} id - Close event object
-     */
-    this.onClose = closeEvt => {}
-  }
-
-  /**
-   * Enable other peers to join the *WebChannel* with your help as an
-   * intermediary peer.
-   * @param  {Object} [options] Any available connection service options
-   * @returns {Promise} It is resolved once the *WebChannel* is open. The
-   * callback function take a parameter of type {@link WebChannel~AccessData}.
-   */
-  open (options = {}) {
-    let settings = Object.assign({}, this.settings, options)
-    return this.gate.open(channel => this.addChannel(channel), settings)
-  }
-
-  addChannel (channel) {
-    return this.initChannel(channel)
-      .then(channel => {
-        let msg = msgBld.msg(INITIALIZATION, this.myId, channel.peerId, {
-          manager: this.manager.id,
-          wcId: this.id
-        })
-        channel.send(msg)
-        return this.manager.add(channel)
-      })
-  }
-
-  /**
-    * Add a bot server to the network with his hostname and port
-    *
-    * @param {string} host - The hotname or the ip of the bot server to be add
-    * @param {number} port - The port of the bot server to be add
-    * @return {Promise} It resolves once the bot server joined the network
-    */
-  addBotServer (url) {
-    return provide(WEBSOCKET).connect(url)
-      .then(socket => {
-        /*
-          Once the connection open a message is sent to the server in order
-          that he can join initiate the channel
-        */
-        socket.send(msgBld.msg(JOIN, this.myId, null, {wcId: this.id}))
-        return this.addChannel(socket)
-      })
-  }
-
-  /**
-   * Prevent clients to join the `WebChannel` even if they possesses a key.
-   */
-  close () {
-    this.gate.close()
-  }
-
-  /**
-   * If the *WebChannel* is open, the clients can join it through you, otherwise
-   * it is not possible.
-   * @returns {boolean} True if the *WebChannel* is open, false otherwise
-   */
-  isOpen () {
-    return this.gate.isOpen()
-  }
-
-  /**
-   * Get the data which should be provided to all clients who must join
-   * the *WebChannel*. It is the same data which
-   * {@link WebChannel#openForJoining} callback function provides.
-   * @returns {WebChannel~AccessData|null} - Data to join the *WebChannel*
-   * or null is the *WebChannel* is closed
-   */
-  getAccess () {
-    return this.gate.accessData
-  }
-
-  /**
-   * Join the *WebChannel*.
-   * @param  {string} key - The key provided by one of the *WebChannel* members.
-   * @param  {type} [options] - Any available connection service options.
-   * @returns {Promise} It resolves once you became a *WebChannel* member.
-   */
-  join (key, options = {}) {
-    let settings = Object.assign({}, this.settings, options)
-    let webSocketService = provide(WEBSOCKET)
-    let wsWithSignaling
-    let webRTCService = provide(WEBRTC)
-    return new Promise((resolve, reject) => {
-      this.onJoin = () => resolve(this)
-      webSocketService.connect(settings.signaling)
-        .then(ws => {
-          wsWithSignaling = ws
-          return webRTCService.connectOverSignaling(ws, key)
-        })
-        .then(channel => {
-          wsWithSignaling.onclose = null
-          wsWithSignaling.close()
-          return this.initChannel(channel)
-        })
-        .catch(reject)
-    })
-  }
-
-  /**
-    * Allow a bot server to join the network by creating a connection
-    * with the peer who asked his coming
-    *
-    * @param {Object} channel - The channel between the server and the pair
-    * who requested the add
-    * @return {Promise} It resolves once the the server has joined the network
-    */
-  joinAsBot (channel) {
-    return new Promise((resolve, reject) => {
-      this.onJoin = resolve
-      this.initChannel(channel)
-    })
-  }
-
-  // joinViaBot (key, url) {
-  //   let webSocketService = provide(WEBSOCKET)
-  //   let wsWithSignaling
-  //   let webRTCService = provide(this.settings.connector)
-  //   return new Promise((resolve, reject) => {
-  //     this.onJoin = () => resolve(this)
-  //     webSocketService.connect(settings.signaling)
-  //       .then(ws => {
-  //         wsWithSignaling = ws
-  //         return webRTCService.connectOverSignaling(ws, key)
-  //       })
-  //       .then(channel => {
-  //         wsWithSignaling.onclose = null
-  //         wsWithSignaling.close()
-  //         return this.initChannel(channel)
-  //       })
-  //       .catch(reject)
-  //   })
-  // }
-
-  /**
-   * Leave the *WebChannel*. No longer can receive and send messages to the group.
-   */
-  leave () {
-    if (this.channels.size !== 0) {
-      this.topology = this.settings.topology
-      this.members = []
-      this.pingTime = 0
-      // this.gate.close()
-      this.manager.leave(this)
-    }
-  }
-
-  /**
-   * Send the message to all *WebChannel* members.
-   * @param  {string|external:ArrayBufferView} data - Message
-   */
-  send (data) {
-    if (this.channels.size !== 0) {
-      msgBld.handleUserMessage(data, this.myId, null, dataChunk => {
-        this.manager.broadcast(this, dataChunk)
-      })
-    }
-  }
-
-  /**
-   * Send the message to a particular peer in the *WebChannel*.
-   * @param  {number} id - Id of the recipient peer
-   * @param  {string|external:ArrayBufferView} data - Message
-   */
-  sendTo (id, data) {
-    if (this.channels.size !== 0) {
-      msgBld.handleUserMessage(data, this.myId, id, dataChunk => {
-        this.manager.sendTo(id, this, dataChunk)
-      }, false)
-    }
-  }
-
-  /**
-   * Get the ping of the *WebChannel*. It is an amount in milliseconds which
-   * corresponds to the longest ping to each *WebChannel* member.
-   * @returns {Promise}
-   */
-  ping () {
-    if (this.members.length !== 0 && this.pingTime === 0) {
-      return new Promise((resolve, reject) => {
-        if (this.pingTime === 0) {
-          this.pingTime = Date.now()
-          this.maxTime = 0
-          this.pongNb = 0
-          this.pingFinish = delay => resolve(delay)
-          this.manager.broadcast(this, msgBld.msg(PING, this.myId))
-          setTimeout(() => resolve(PING_TIMEOUT), PING_TIMEOUT)
-        }
-      })
-    } else return Promise.resolve(0)
-  }
-
-  get topology () {
-    return this.settings.topology
-  }
-
-  set topology (name) {
-    this.settings.topology = name
-    this.manager = provide(this.settings.topology)
-  }
-
-  onJoining$ (peerId) {
-    this.members[this.members.length] = peerId
-    this.onJoining(peerId)
-  }
-
-  onLeaving$ (peerId) {
-    this.members.splice(this.members.indexOf(peerId), 1)
-    this.onLeaving(peerId)
-  }
-
-  /**
-   * Send a message to a service of the same peer, joining peer or any peer in
-   * the *WebChannel*.
-   * @private
-   * @param  {string} serviceId - Service id
-   * @param  {string} recepient - Identifier of recepient peer id
-   * @param  {Object} [msg={}] - Message to send
-   */
-  sendInnerTo (recepient, serviceId, data, forward = false) {
-    if (forward) {
-      this.manager.sendInnerTo(recepient, this, data)
-    } else {
-      if (Number.isInteger(recepient)) {
-        let msg = msgBld.msg(INNER_DATA, this.myId, recepient, {serviceId, data})
-        this.manager.sendInnerTo(recepient, this, msg)
-      } else {
-        recepient.send(msgBld.msg(INNER_DATA, this.myId, recepient.peerId, {serviceId, data}))
-      }
-    }
-  }
-
-  sendInner (serviceId, data) {
-    this.manager.broadcast(this, msgBld.msg(INNER_DATA, this.myId, null, {serviceId, data}))
-  }
-
-  /**
-   * Message event handler (*WebChannel* mediator). All messages arrive here first.
-   * @private
-   * @param {Channel} channel - The channel the message came from
-   * @param {external:ArrayBuffer} data - Message
-   */
-  onChannelMessage (channel, data) {
-    let header = msgBld.readHeader(data)
-    if (header.code === USER_DATA) {
-      msgBld.readUserMessage(this, header.senderId, data, (fullData, isBroadcast) => {
-        this.onMessage(header.senderId, fullData, isBroadcast)
-      })
-    } else {
-      let msg = msgBld.readInternalMessage(data)
-      switch (header.code) {
-        case INITIALIZATION:
-          this.topology = msg.manager
-          this.myId = header.recepientId
-          this.id = msg.wcId
-          channel.peerId = header.senderId
-          break
-        case INNER_DATA:
-          if (header.recepientId === 0 || this.myId === header.recepientId) {
-            provide(msg.serviceId).onMessage(channel, header.senderId, header.recepientId, msg.data)
-          } else this.sendInnerTo(header.recepientId, null, data, true)
-          break
-        case PING:
-          this.manager.sendTo(header.senderId, this, msgBld.msg(PONG, this.myId))
-          break
-        case PONG:
-          let now = Date.now()
-          this.pongNb++
-          this.maxTime = Math.max(this.maxTime, now - this.pingTime)
-          if (this.pongNb === this.members.length) {
-            this.pingFinish(this.maxTime)
-            this.pingTime = 0
-          }
-          break
-        default:
-          throw new Error(`Unknown message type code: "${header.code}"`)
-      }
-    }
-  }
-
-  /**
-   * Initialize channel. The *Channel* object is a facade for *WebSocket* and
-   * *RTCDataChannel*.
-   * @private
-   * @param {external:WebSocket|external:RTCDataChannel} ch - Channel to
-   * initialize
-   * @param {number} [id] - Assign an id to this channel. It would be generated
-   * if not provided
-   * @returns {Promise} - Resolved once the channel is initialized on both sides
-   */
-  initChannel (ch, id = -1) {
-    if (id === -1) id = this.generateId()
-    let channel = new Channel(ch)
-    channel.peerId = id
-    channel.webChannel = this
-    channel.onMessage = data => this.onChannelMessage(channel, data)
-    channel.onClose = closeEvt => this.manager.onChannelClose(closeEvt, channel)
-    channel.onError = evt => this.manager.onChannelError(evt, channel)
-    return Promise.resolve(channel)
-  }
-
-  /**
-   * Generate random id for a *WebChannel* or a new peer.
-   * @private
-   * @returns {number} - Generated id
-   */
-  generateId () {
-    do {
-      let id = Math.ceil(Math.random() * MAX_ID)
-      if (id === this.myId) continue
-      if (this.members.includes(id)) continue
-      if (this.generatedIds.has(id)) continue
-      this.generatedIds.add(id)
-      setTimeout(() => this.generatedIds.delete(id), ID_TIMEOUT)
-      return id
-    } while (true)
-  }
-}
-
-class Bot {
-  constructor (options = {}) {
-    if (isBrowser()) throw new Error('Bot can be instanciated only in Node\'s environment')
-    this.defaults = {
-      host: '127.0.0.1',
-      port: 9000,
-      log: false
-    }
-    this.settings = Object.assign({}, this.defaults, options)
-
-    this.server
     this.webChannels = []
 
-    this.onWebChannel = wc => {
-      // this.log('connected', 'Connected to the network')
-      // this.log('id', wc.myId)
-    }
+    /**
+     * @type {function(wc: WebChannel)}
+     */
+    this.onWebChannel = wc => {}
   }
 
-  listen (options = {}) {
+  /**
+   * Starts listen on socket.
+   *
+   * @returns {Promise<, string>}
+   */
+  start () {
     return new Promise((resolve, reject) => {
-      this.settings = Object.assign({}, this.settings, options)
       let WebSocketServer = require('ws').Server
       this.server = new WebSocketServer({
         host: this.settings.host,
         port: this.settings.port
-      }, () => resolve())
+      }, resolve)
 
-      this.server.on('error', () => {
-        reject('WebSocketServerError with ws://' + this.settings.host + ':' + this.settings.port)
+      for (let wc of this.webChannels) {
+        wc.settings.listenOn = this.settings.listenOn
+      }
+
+      this.server.on('error', (err) => {
+        console.error('Server error: ', err)
+        for (let wc of this.webChannels) {
+          wc.settings.listenOn = ''
+        }
+        reject(`Server error: ${err.messsage}`)
       })
 
-      this.server.on('connection', socket => {
-        let channel = new Channel(socket)
-        let msgBld = provide(MESSAGE_BUILDER)
-        channel.onMessage = data => {
-          let header = msgBld.readHeader(data)
-          let msg = msgBld.readInternalMessage(data)
-          let wc = this.findWebChannel(msg.wcId)
-          switch (header.code) {
-            case JOIN:
+      this.server.on('connection', ws => {
+        ws.onmessage = msgEvt => {
+          try {
+            let msg = JSON.parse(msgEvt.data)
+            if ('join' in msg) {
+              let wc = this.getWebChannel(msg.join)
               if (wc === null) {
-                wc = new WebChannel({connector: WEBSOCKET})
-                wc.joinAsBot(channel.channel).then(() => this.onWebChannel(wc))
-              } else wc.addChannel(channel.channel)
-              break
-            case NEW_CHANNEL:
-              if (wc !== null) {
-                provide(CHANNEL_BUILDER).onChannel(wc, channel.channel, msg.oneMsg, header.senderId)
+                ws.send(JSON.stringify({isKeyOk: false}))
+              } else {
+                ws.send(JSON.stringify({isKeyOk: true, useThis: true}))
+                wc.invite(ws)
               }
-              break
-            default:
-              channel.close()
+            } else if ('wcId' in msg) {
+              let wc = this.getWebChannel(msg.wcId)
+              if (wc === null) {
+                console.log('Listen on: ' + this.settings.listenOn)
+                if (wc === null) wc = new WebChannel(this.settings)
+                wc.id = msg.wcId
+                this.addWebChannel(wc)
+                wc.join(ws).then(() => { this.onWebChannel(wc) })
+              } else if ('senderId' in msg) {
+                ServiceFactory.get(CHANNEL_BUILDER).onChannel(wc, ws, msg.senderId)
+              } else {
+                ws.close(MESSAGE_UNKNOWN_ATTRIBUTE, 'Unsupported message protocol')
+              }
+            }
+          } catch (err) {
+            ws.close(MESSAGE_TYPE_ERROR, 'msg')
+            console.error(`Unsupported message type: ${err.message}`)
           }
         }
       })
     })
   }
 
-  addWebChannel (wc) {
-    this.webChannels[this.webChannels.length] = wc
+  /**
+   * Stops listen on web socket.
+   */
+  stop () {
+    for (let wc of this.webChannels) {
+      wc.settings.listenOn = ''
+    }
+    this.server.close()
   }
 
-  stopListen () {
-    return this.server.close()
-  }
-
-  findWebChannel (id) {
-    this.webChannels.forEach((wc, index) => {
-      if (id === wc.id) {
-        if (wc.members.length === 0) this.webChannels.splice(index, 1)
-        else return wc
-      }
-    })
+  /**
+   * Get `WebChannel` identified by its `id`.
+   *
+   * @param {number} id
+   *
+   * @returns {WebChannel|null}
+   */
+  getWebChannel (id) {
+    for (let wc of this.webChannels) {
+      if (id === wc.id) return wc
+    }
     return null
   }
 
-  leave (WebChannel) {
-    let index = -1
-    for (let i = 0; i < this.webChannels.length; i++) {
-      if (WebChannel.id === this.webChannels[i].id) {
-        index = i
-        break
-      }
-    }
-    this.webChannels.splice(index, 1)[0].leave()
-  }
-
-  log (label, msg) {
-    if (this.settings.log) {
-      var d = new Date()
-      let datetime = '' + d.toLocaleTimeString() + ' ' + d.toLocaleDateString()
-      console.log('[', label.toUpperCase(), '] [', datetime, ']', msg)
-    }
+  /**
+   * Add `WebChannel`.
+   *
+   * @param {type} wc Description
+   *
+   * @returns {type} Description
+   */
+  addWebChannel (wc) {
+    this.webChannels[this.webChannels.length] = wc
   }
 }
 
-exports.WebChannel = WebChannel;
-exports.Bot = Bot;
+/**
+ * Create `WebChannel`.
+ *
+ * @param {WebChannelSettings} options
+ * @param {WEB_RTC|WEB_SOCKET} [options.connector=WEB_RTC] Which connector is preferable during connection establishment
+ * @param {FULLY_CONNECTED} [options.topology=FULLY_CONNECTED] Fully connected topology is the only one available for now
+ * @param {string} [options.signalingURL='wss://sigver-coastteam.rhcloud.com:8443'] Signaling server url
+ * @param {RTCIceServer} [options.iceServers=[{urls:'stun:turn01.uswest.xirsys.com'}]] Set of ice servers for WebRTC
+ * @param {string} [options.listenOn=''] Server url when the peer is listen on web socket
+ *
+ * @returns {WebChannel}
+ */
+function create (options) {
+  let defaultSettings = {
+    connector: WEB_RTC,
+    topology: FULLY_CONNECTED,
+    signalingURL: 'wss://sigver-coastteam.rhcloud.com:8443',
+    iceServers: [
+     {urls: 'stun:turn01.uswest.xirsys.com'}
+    ],
+    listenOn: ''
+  }
+  let mySettings = Object.assign({}, defaultSettings, options)
+  return new WebChannel(mySettings)
+}
+
+
+
+/**
+ * An event handler to be called when the *close* event is received either by the *WebSocket* or by the *RTCDataChannel*.
+ * @callback closeEventHandler
+ * @param {external:CloseEvent} evt Close event object
+ */
+
+ /**
+  * An event handler to be called when a *Channel* has been established.
+  * @callback channelEventHandler
+  * @param {Channel} channel Netflux channel
+  */
+
+exports.create = create;
+exports.BotServer = BotServer;
+exports.WEB_SOCKET = WEB_SOCKET;
+exports.WEB_RTC = WEB_RTC;
 
 Object.defineProperty(exports, '__esModule', { value: true });
 

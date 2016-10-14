@@ -37,14 +37,14 @@
 
   <script src="netflux.es2015.umd.js"></script>
   <script>
-    let webChannel, onJoining, onMessage
+    let webChannel, onPeerJoin, onMessage
     //let signaling = 'ws://152.81.64.252:8000'
-    let signaling = 'wss://sigver-coastteam.rhcloud.com:8443'
+    let signaling = 'ws://sigver-coastteam.rhcloud.com:8000'
     function create () {
-      webChannel = new netflux.WebChannel({signaling})
-      webChannel.onJoining = onJoining
+      webChannel = new netflux.create({signaling})
+      webChannel.onPeerJoin = onPeerJoin
       webChannel.onMessage = onMessage
-      webChannel.onLeaving = onLeaving
+      webChannel.onPeerLeave = onPeerLeave
       webChannel.open()
         .then((data) => {
           document.getElementById("key-create").appendChild(document.createTextNode(data.key))
@@ -55,14 +55,14 @@
     function join () {
       let key = document.getElementById("key-join").value
 
-      webChannel = new netflux.WebChannel({signaling})
-      webChannel.onJoining = onJoining
+      webChannel = new netflux.create({signaling})
+      webChannel.onPeerJoin = onPeerJoin
       webChannel.onMessage = onMessage
-      webChannel.onLeaving = onLeaving
+      webChannel.onPeerLeave = onPeerLeave
       webChannel.join(key)
         .then(function (wc) {
           // webChannel.channels.forEach(function(value) {
-          //   onJoining(value.peerId)
+          //   onPeerJoin(value.peerId)
           // })
           // webChannel.channels.values().next().value
           document.getElementById("my-id").innerHTML = webChannel.myId
@@ -93,14 +93,14 @@
       document.getElementById("msg").value = ""
     }
 
-    onJoining = function (id) {
+    onPeerJoin = function (id) {
       let ol = document.getElementById("members")
       let li = document.createElement("li")
       li.appendChild(document.createTextNode(id))
       ol.appendChild(li)
     }
 
-    onLeaving = function (id) {
+    onPeerLeave = function (id) {
       let ol = document.getElementById("members")
       for (let i in ol.childNodes) {
         if (ol.childNodes[i].innerHTML == id) {
