@@ -41,7 +41,7 @@
     //let signaling = 'ws://152.81.64.252:8000'
     let signaling = 'ws://sigver-coastteam.rhcloud.com:8000'
     function create () {
-      webChannel = new netflux.create({signaling})
+      webChannel = netflux.create({signaling})
       webChannel.onPeerJoin = onPeerJoin
       webChannel.onMessage = onMessage
       webChannel.onPeerLeave = onPeerLeave
@@ -55,7 +55,7 @@
     function join () {
       let key = document.getElementById("key-join").value
 
-      webChannel = new netflux.create({signaling})
+      webChannel = netflux.create({signaling})
       webChannel.onPeerJoin = onPeerJoin
       webChannel.onMessage = onMessage
       webChannel.onPeerLeave = onPeerLeave
